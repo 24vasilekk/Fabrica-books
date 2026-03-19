@@ -915,31 +915,31 @@ function renderFinishState() {
   els.retryGenerationButton.disabled = !appState.orderId;
 
   if (appState.automationStatus === 'submitting') {
-    els.orderStatusLabel.textContent = 'Отправляем в AI';
+    els.orderStatusLabel.textContent = 'Книга создается';
     els.automationStatusLine.textContent = appState.generationStatus;
     return;
   }
 
   if (appState.automationStatus === 'done-live') {
-    els.orderStatusLabel.textContent = 'Готово и отправлено';
+    els.orderStatusLabel.textContent = 'Материалы готовы';
     els.automationStatusLine.textContent = appState.managerDeliveryStatus || appState.generationStatus;
     return;
   }
 
   if (appState.automationStatus === 'done-mock') {
-    els.orderStatusLabel.textContent = 'Mock-генерация готова';
+    els.orderStatusLabel.textContent = 'Черновик собран';
     els.automationStatusLine.textContent = appState.managerDeliveryStatus || appState.generationStatus;
     return;
   }
 
   if (appState.automationStatus === 'error') {
-    els.orderStatusLabel.textContent = 'Нужен backend';
+    els.orderStatusLabel.textContent = 'Нужна проверка';
     els.automationStatusLine.textContent = appState.managerDeliveryStatus || appState.generationStatus;
     return;
   }
 
   els.orderStatusLabel.textContent = 'Новый заказ';
-  els.automationStatusLine.textContent = 'Заказ пока обработан в локальном mock-режиме.';
+  els.automationStatusLine.textContent = 'Заказ принят и ожидает следующий этап обработки.';
 }
 
 function formatAnswer(answer) {
