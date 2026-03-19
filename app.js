@@ -727,11 +727,6 @@ function movePhoto(index, direction) {
 }
 
 async function submitProject() {
-  if (!appState.photos.length) {
-    alert('Добавьте хотя бы одну фотографию, чтобы завершить проект.');
-    return;
-  }
-
   if (!appState.customerName.trim() || !appState.customerContact.trim()) {
     alert('Укажите имя и контакт клиента перед отправкой.');
     showScreen('screen-payment');

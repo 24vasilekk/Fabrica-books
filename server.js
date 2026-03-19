@@ -204,7 +204,7 @@ function validateOrder(order) {
   if (!String(order.bookType.title || '').trim()) throw new Error('Book type is required');
   if (!order.payment || !order.payment.approved) throw new Error('Payment or manager approval is required');
   if (!Array.isArray(order.questionnaire.questions) || !order.questionnaire.questions.length) throw new Error('Questionnaire is empty');
-  if (!Array.isArray(order.photos) || !order.photos.length) throw new Error('At least one photo is required');
+  if (!Array.isArray(order.photos)) throw new Error('Photos must be an array');
   if (order.photos.length > MAX_PHOTOS) throw new Error(`Too many photos: max ${MAX_PHOTOS}`);
   for (const photo of order.photos) {
     const decoded = decodePhotoPreview(photo.preview);
