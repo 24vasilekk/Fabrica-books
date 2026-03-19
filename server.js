@@ -1,0 +1,816 @@
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const {
+  buildOutlinePrompt,
+  buildChapterPrompt,
+  buildExpandChapterPrompt,
+  buildPolishChapterPrompt,
+  buildRegenerateChapterPrompt,
+  buildMergePrompt,
+  buildEditPrompt
+} = require('./prompts/bookPrompts');
+
+loadEnvFile(path.join(__dirname, '.env'));
+
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || '127.0.0.1';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2';
+const OPENROUTER_MODEL_OUTLINE = process.env.OPENROUTER_MODEL_OUTLINE || DEFAULT_OPENROUTER_MODEL;
+const OPENROUTER_MODEL_WRITER = process.env.OPENROUTER_MODEL_WRITER || DEFAULT_OPENROUTER_MODEL;
+const OPENROUTER_MODEL_EDITOR = process.env.OPENROUTER_MODEL_EDITOR || DEFAULT_OPENROUTER_MODEL;
+const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+const OPENROUTER_OUTLINE_MAX_TOKENS = Number(process.env.OPENROUTER_OUTLINE_MAX_TOKENS || 2500);
+const OPENROUTER_CHAPTER_MAX_TOKENS = Number(process.env.OPENROUTER_CHAPTER_MAX_TOKENS || 5000);
+const OPENROUTER_EXPAND_MAX_TOKENS = Number(process.env.OPENROUTER_EXPAND_MAX_TOKENS || 6500);
+const OPENROUTER_EDIT_MAX_TOKENS = Number(process.env.OPENROUTER_EDIT_MAX_TOKENS || 12000);
+const SEND_TO_TELEGRAM = process.env.SEND_TO_TELEGRAM === 'true';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_MANAGER_CHAT_ID = process.env.TELEGRAM_MANAGER_CHAT_ID || '';
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://${HOST}:${PORT}`;
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'book-photos';
+const DATA_DIR = path.join(__dirname, 'data');
+const STORAGE_DIR = path.join(__dirname, 'storage');
+const PHOTO_STORAGE_DIR = path.join(STORAGE_DIR, 'photos');
+const BOOK_STORAGE_DIR = path.join(STORAGE_DIR, 'books');
+const DB_FILE = path.join(DATA_DIR, 'db.json');
+const LEGACY_ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
+const MAX_PHOTOS = 50;
+const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
+
+const processingQueue = [];
+let isProcessingQueue = false;
+
+ensurePersistence();
+
+const server = http.createServer(async (req, res) => {
+  try {
+    if (req.method === 'GET' && req.url === '/api/health') {
+      return sendJson(res, 200, {
+        ok: true,
+        mode: OPENROUTER_API_KEY ? 'live-capable' : 'mock-only',
+        currentModels: {
+          outline: OPENROUTER_MODEL_OUTLINE,
+          writer: OPENROUTER_MODEL_WRITER,
+          editor: OPENROUTER_MODEL_EDITOR
+        },
+        telegramConfigured: Boolean(SEND_TO_TELEGRAM && TELEGRAM_BOT_TOKEN && TELEGRAM_MANAGER_CHAT_ID),
+        databaseConfigured: true,
+        photoStorageConfigured: true,
+        supabaseConfigured: isSupabaseConfigured(),
+        queueLength: processingQueue.length,
+        currentlyProcessing: isProcessingQueue
+      });
+    }
+
+    if (req.method === 'GET' && req.url === '/api/orders') {
+      const db = readDb();
+      return sendJson(res, 200, {
+        orders: db.orders.slice().sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+      });
+    }
+
+    if (req.method === 'GET' && req.url.startsWith('/api/orders/')) {
+      const cleanPath = req.url.split('?')[0];
+      const orderId = decodeURIComponent(
+        cleanPath
+          .replace('/api/orders/', '')
+          .replace('/retry', '')
+          .replace('/regenerate-chapter', '')
+      );
+      const order = readDb().orders.find((item) => item.orderId === orderId);
+      if (!order) return sendJson(res, 404, { error: 'Order not found' });
+
+      if (req.method === 'GET' && !cleanPath.endsWith('/retry')) {
+        return sendJson(res, 200, order);
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/api/orders') {
+      const body = await readJson(req);
+      const order = normalizeOrder(body);
+      validateOrder(order);
+      const storedOrder = await saveOrder(order);
+      enqueueOrder(storedOrder.orderId);
+      return sendJson(res, 202, {
+        accepted: true,
+        orderId: storedOrder.orderId,
+        status: storedOrder.status,
+        generationStatus: storedOrder.generationStatus,
+        photoCount: storedOrder.photos.length
+      });
+    }
+
+    if (req.method === 'POST' && req.url.startsWith('/api/orders/') && req.url.endsWith('/retry')) {
+      const orderId = decodeURIComponent(req.url.replace('/api/orders/', '').replace('/retry', ''));
+      const order = readDb().orders.find((item) => item.orderId === orderId);
+      if (!order) return sendJson(res, 404, { error: 'Order not found' });
+      await updateStoredOrder(orderId, {
+        status: 'queued',
+        generationStatus: 'Заказ повторно поставлен в очередь на генерацию.'
+      });
+      enqueueOrder(orderId);
+      return sendJson(res, 202, { accepted: true, orderId, status: 'queued' });
+    }
+
+    if (req.method === 'POST' && req.url.startsWith('/api/orders/') && req.url.endsWith('/regenerate-chapter')) {
+      const orderId = decodeURIComponent(req.url.replace('/api/orders/', '').replace('/regenerate-chapter', ''));
+      const order = readDb().orders.find((item) => item.orderId === orderId);
+      if (!order) return sendJson(res, 404, { error: 'Order not found' });
+      const body = await readJson(req);
+      const chapterIndex = Number(body.chapterIndex);
+      const instruction = String(body.instruction || '').trim();
+      const updatedOrder = await regenerateChapter(orderId, chapterIndex, instruction);
+      return sendJson(res, 200, {
+        accepted: true,
+        orderId,
+        status: updatedOrder.status,
+        generationStatus: updatedOrder.generationStatus
+      });
+    }
+
+    return serveStatic(req, res);
+  } catch (error) {
+    return sendJson(res, 500, { error: error.message || 'Server error' });
+  }
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`Fabrika Books server started on ${PUBLIC_BASE_URL}`);
+});
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    if (!line || line.trim().startsWith('#')) continue;
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex === -1) continue;
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+function isSupabaseConfigured() {
+  return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function ensurePersistence() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(PHOTO_STORAGE_DIR, { recursive: true });
+  fs.mkdirSync(BOOK_STORAGE_DIR, { recursive: true });
+
+  if (!fs.existsSync(DB_FILE)) {
+    const legacyOrders = fs.existsSync(LEGACY_ORDERS_FILE)
+      ? JSON.parse(fs.readFileSync(LEGACY_ORDERS_FILE, 'utf8'))
+      : [];
+    fs.writeFileSync(DB_FILE, JSON.stringify({ orders: legacyOrders, statusHistory: [] }, null, 2), 'utf8');
+  }
+
+  if (!fs.existsSync(LEGACY_ORDERS_FILE)) {
+    fs.writeFileSync(LEGACY_ORDERS_FILE, '[]\n', 'utf8');
+  }
+}
+
+function readDb() {
+  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+}
+
+function writeDb(db) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+  fs.writeFileSync(LEGACY_ORDERS_FILE, JSON.stringify(db.orders, null, 2), 'utf8');
+}
+
+function normalizeOrder(body) {
+  return {
+    orderId: body.orderId || `FB-BOOKS-${Date.now()}`,
+    submittedAt: body.submittedAt || new Date().toISOString(),
+    customer: body.customer || {},
+    bookType: body.bookType || {},
+    payment: body.payment || {},
+    questionnaire: body.questionnaire || { questions: [] },
+    photos: Array.isArray(body.photos) ? body.photos : [],
+    photoComment: body.photoComment || ''
+  };
+}
+
+function validateOrder(order) {
+  if (!String(order.customer.name || '').trim()) throw new Error('Customer name is required');
+  if (!String(order.customer.contact || '').trim()) throw new Error('Customer contact is required');
+  if (!String(order.bookType.title || '').trim()) throw new Error('Book type is required');
+  if (!order.payment || !order.payment.approved) throw new Error('Payment or manager approval is required');
+  if (!Array.isArray(order.questionnaire.questions) || !order.questionnaire.questions.length) throw new Error('Questionnaire is empty');
+  if (!Array.isArray(order.photos) || !order.photos.length) throw new Error('At least one photo is required');
+  if (order.photos.length > MAX_PHOTOS) throw new Error(`Too many photos: max ${MAX_PHOTOS}`);
+  for (const photo of order.photos) {
+    const decoded = decodePhotoPreview(photo.preview);
+    if (decoded.buffer.length > MAX_PHOTO_BYTES) throw new Error('One of the photos is too large');
+  }
+}
+
+async function saveOrder(order) {
+  const db = readDb();
+  const storedPhotos = await persistPhotos(order.orderId, order.photos);
+  const storedOrder = {
+    ...order,
+    photos: storedPhotos,
+    status: 'queued',
+    generationStatus: 'Заказ поставлен в очередь на генерацию книги.',
+    managerDeliveryStatus: '',
+    generatedBook: '',
+    generatedOutline: null,
+    generatedChapters: [],
+    mode: OPENROUTER_API_KEY ? 'pending-live' : 'pending-mock',
+    aiProvider: OPENROUTER_API_KEY ? 'openrouter' : 'mock',
+    statuses: [
+      { status: 'queued', at: new Date().toISOString(), note: 'Заказ поставлен в очередь' }
+    ]
+  };
+  db.orders.push(storedOrder);
+  db.statusHistory.push({ orderId: storedOrder.orderId, status: 'queued', at: new Date().toISOString() });
+  writeDb(db);
+  await syncOrderToSupabase(storedOrder);
+  return storedOrder;
+}
+
+async function updateStoredOrder(orderId, patch) {
+  const db = readDb();
+  let updatedOrder = null;
+  db.orders = db.orders.map((order) => {
+    if (order.orderId !== orderId) return order;
+    updatedOrder = {
+      ...order,
+      ...patch,
+      status: patch.status || order.status,
+      statuses: [
+        ...(order.statuses || []),
+        {
+          status: patch.status || order.status,
+          at: new Date().toISOString(),
+          note: patch.generationStatus || patch.managerDeliveryStatus || 'Заказ обновлен'
+        }
+      ]
+    };
+    return updatedOrder;
+  });
+  db.statusHistory.push({ orderId, status: patch.status || 'updated', at: new Date().toISOString() });
+  writeDb(db);
+  if (updatedOrder) await syncOrderToSupabase(updatedOrder);
+  return updatedOrder;
+}
+
+function enqueueOrder(orderId) {
+  if (!processingQueue.includes(orderId)) processingQueue.push(orderId);
+  processQueue().catch((error) => console.error('Queue error', error));
+}
+
+async function processQueue() {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+  try {
+    while (processingQueue.length) {
+      const orderId = processingQueue.shift();
+      await processSingleOrder(orderId);
+    }
+  } finally {
+    isProcessingQueue = false;
+  }
+}
+
+async function processSingleOrder(orderId) {
+  const order = readDb().orders.find((item) => item.orderId === orderId);
+  if (!order) return;
+
+  await updateStoredOrder(orderId, {
+    status: 'generating',
+    generationStatus: 'Сервер генерирует книгу, затем прогоняет ее через редактор и сохраняет результат.'
+  });
+
+  try {
+    const freshOrder = readDb().orders.find((item) => item.orderId === orderId);
+    const generationResult = await generateBook(freshOrder);
+    const generatedBookPath = persistGeneratedBook(orderId, generationResult.generatedBook);
+    const processedOrder = await updateStoredOrder(orderId, {
+      status: generationResult.mode === 'live' ? 'generated' : 'mock-generated',
+      generationStatus: generationResult.generationStatus,
+      generatedBook: generationResult.generatedBook,
+      generatedOutline: generationResult.outline || null,
+      generatedChapters: generationResult.chapters || [],
+      generatedBookPath,
+      mode: generationResult.mode
+    });
+    const deliveryResult = await notifyManager(processedOrder, generationResult);
+    await updateStoredOrder(orderId, {
+      status: deliveryResult.sent ? 'sent_to_manager' : processedOrder.status,
+      managerDeliveryStatus: deliveryResult.managerDeliveryStatus
+    });
+  } catch (error) {
+    await updateStoredOrder(orderId, {
+      status: 'error',
+      generationStatus: `Ошибка генерации: ${error.message}`
+    });
+  }
+}
+
+function persistGeneratedBook(orderId, generatedBook) {
+  const targetPath = path.join(BOOK_STORAGE_DIR, `${orderId}.txt`);
+  fs.writeFileSync(targetPath, generatedBook || '', 'utf8');
+  return targetPath;
+}
+
+async function persistPhotos(orderId, photos) {
+  const orderPhotoDir = path.join(PHOTO_STORAGE_DIR, orderId);
+  fs.mkdirSync(orderPhotoDir, { recursive: true });
+
+  const storedPhotos = [];
+  for (const [index, photo] of photos.entries()) {
+    const decoded = decodePhotoPreview(photo.preview);
+    const extension = decoded.extension || 'bin';
+    const filename = `${String(index + 1).padStart(2, '0')}-${sanitizeFilename(photo.name || 'photo')}.${extension}`;
+    const absolutePath = path.join(orderPhotoDir, filename);
+    fs.writeFileSync(absolutePath, decoded.buffer);
+
+    let publicUrl = `${PUBLIC_BASE_URL}/storage/photos/${encodeURIComponent(orderId)}/${encodeURIComponent(filename)}`;
+    let storageProvider = 'local';
+    if (isSupabaseConfigured()) {
+      const uploadedUrl = await uploadToSupabaseStorage(orderId, filename, decoded.buffer, decoded.mimeType);
+      if (uploadedUrl) {
+        publicUrl = uploadedUrl;
+        storageProvider = 'supabase';
+      }
+    }
+
+    storedPhotos.push({
+      id: photo.id || `${orderId}-${index + 1}`,
+      name: photo.name || filename,
+      storagePath: absolutePath,
+      publicUrl,
+      storageProvider
+    });
+  }
+  return storedPhotos;
+}
+
+function decodePhotoPreview(preview) {
+  const match = String(preview || '').match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+  if (!match) return { extension: 'bin', mimeType: 'application/octet-stream', buffer: Buffer.from('') };
+  const mimeType = match[1];
+  return {
+    extension: mimeType.split('/')[1].replace('jpeg', 'jpg'),
+    mimeType,
+    buffer: Buffer.from(match[2], 'base64')
+  };
+}
+
+function sanitizeFilename(name) {
+  return String(name)
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-zA-Z0-9а-яА-Я_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase() || 'photo';
+}
+
+async function uploadToSupabaseStorage(orderId, filename, buffer, mimeType) {
+  const objectPath = `${orderId}/${filename}`;
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_STORAGE_BUCKET}/${objectPath}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      'Content-Type': mimeType,
+      'x-upsert': 'true'
+    },
+    body: buffer
+  });
+  if (!response.ok) return '';
+  return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_STORAGE_BUCKET}/${objectPath}`;
+}
+
+async function syncOrderToSupabase(order) {
+  if (!isSupabaseConfigured()) return;
+
+  const payload = {
+    order_id: order.orderId,
+    submitted_at: order.submittedAt,
+    customer_name: order.customer.name || '',
+    customer_contact: order.customer.contact || '',
+    book_type_id: order.bookType.id || '',
+    book_type_title: order.bookType.title || '',
+    payment_method: order.payment.method || '',
+    payment_approved: Boolean(order.payment.approved),
+    manager_code: order.payment.managerCode || '',
+    status: order.status || 'received',
+    generation_status: order.generationStatus || '',
+    manager_delivery_status: order.managerDeliveryStatus || '',
+    generated_book: order.generatedBook || '',
+    questionnaire: order.questionnaire || { questions: [] },
+    photo_comment: order.photoComment || '',
+    photos: order.photos || []
+  };
+
+  await fetch(`${SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=minimal'
+    },
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+
+  await fetch(`${SUPABASE_URL}/rest/v1/order_status_history`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      order_id: order.orderId,
+      status: order.status || 'received',
+      note: order.generationStatus || order.managerDeliveryStatus || 'Order synced',
+      created_at: new Date().toISOString()
+    })
+  }).catch(() => {});
+}
+
+async function generateBook(order) {
+  if (!OPENROUTER_API_KEY) {
+    return {
+      mode: 'mock',
+      generationStatus: 'OpenRouter API пока не подключен. Сервер собрал mock-книгу и сохранил заказ в базе.',
+      generatedBook: buildMockBook(order)
+    };
+  }
+
+  const sourceQuestions = (order.questionnaire.questions || []).filter((item) => String(item.answer || '').trim());
+  const outline = await callModel(
+    buildOutlinePrompt({ ...order, questionnaire: { questions: sourceQuestions } }),
+    { stage: 'outline', json: true }
+  );
+  const chapters = [];
+  for (const chapter of (outline.chapters || []).slice(0, getChapterLimit(order))) {
+    const relatedQuestions = pickRelevantQuestions(sourceQuestions, chapter);
+    const text = await generateChapterText(
+      { ...order, questionnaire: { questions: relatedQuestions } },
+      outline,
+      chapter,
+      chapters
+    );
+    chapters.push({ title: chapter.title, text });
+  }
+  const mergedBook = await callModel(buildMergePrompt(order, outline, chapters), { stage: 'merge' });
+  const editedBook = await callModel(buildEditPrompt(order, mergedBook), { stage: 'editor' });
+  const generatedBook = shouldKeepMergedBook(mergedBook, editedBook) ? mergedBook : editedBook;
+
+  return {
+    mode: 'live',
+    generationStatus: 'Книга сгенерирована, расширена по главам и прогнана через AI-редактор.',
+    generatedBook,
+    outline,
+    chapters
+  };
+}
+
+function getChapterLimit(order) {
+  return order.bookType?.id === 'child' ? 12 : 12;
+}
+
+function shouldExpandChapter(order, text) {
+  const minWords = order.bookType?.id === 'child' ? 900 : 1000;
+  return countWords(text) < minWords;
+}
+
+function shouldKeepMergedBook(mergedBook, editedBook) {
+  if (!editedBook) return true;
+  const mergedWords = countWords(mergedBook);
+  const editedWords = countWords(editedBook);
+  if (!mergedWords || !editedWords) return false;
+  return editedWords < mergedWords * 0.78;
+}
+
+function countWords(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean).length;
+}
+
+function pickRelevantQuestions(questions, chapter) {
+  const hints = (chapter.factsToUse || []).join(' ').toLowerCase();
+  const matched = questions.filter((item) => {
+    const hay = `${item.text} ${item.answer}`.toLowerCase();
+    return hints.split(/\s+/).filter(Boolean).some((part) => hay.includes(part));
+  });
+  const limit = questions.length <= 30 ? 30 : 18;
+  return matched.length ? matched.slice(0, limit) : questions.slice(0, limit);
+}
+
+function buildMockBook(order) {
+  const answered = (order.questionnaire.questions || []).filter((q) => String(q.answer || '').trim());
+  const introFacts = answered.slice(0, 8).map((q) => `- ${q.answer}`).join('\n');
+  const bodyFacts = answered.slice(8, 24).map((q) => `${q.number}. ${q.answer}`).join('\n');
+  return [
+    `${order.bookType.title || 'Персональная книга'}`,
+    '',
+    `Для клиента: ${order.customer.name || 'Без имени'}`,
+    `Контакт: ${order.customer.contact || 'Не указан'}`,
+    '',
+    'Вступление',
+    'Эта книга собрана автоматически на основе анкеты клиента и подготовлена как черновик для редактора и менеджера.',
+    '',
+    'Ключевые факты',
+    introFacts || '- Ответы еще не заполнены подробно.',
+    '',
+    'Основной текст',
+    bodyFacts || 'Недостаточно данных для полного черновика.',
+    '',
+    'Финальное послание',
+    'Следующий шаг: подключить AI API, чтобы вместо mock-текста генерировалась полноценная книга на 50-100 страниц.'
+  ].join('\n');
+}
+
+async function generateChapterText(order, outline, chapter, previousChapters, adminInstruction = '') {
+  let text = await callModel(
+    adminInstruction
+      ? buildRegenerateChapterPrompt(order, outline, chapter, order.questionnaire.questions || [], previousChapters, adminInstruction)
+      : buildChapterPrompt(order, outline, chapter, previousChapters),
+    { stage: 'writer' }
+  );
+  if (shouldExpandChapter(order, text)) {
+    text = await callModel(buildExpandChapterPrompt(order, chapter, text), { stage: 'expand' });
+  }
+  if (shouldExpandChapter(order, text)) {
+    text = await callModel(buildExpandChapterPrompt(order, chapter, text), { stage: 'expand' });
+  }
+  return callModel(buildPolishChapterPrompt(order, chapter, text), { stage: 'editor' });
+}
+
+async function regenerateChapter(orderId, chapterIndex, instruction) {
+  if (!OPENROUTER_API_KEY) throw new Error('Для точечной перегенерации нужен подключенный OpenRouter API');
+
+  const order = readDb().orders.find((item) => item.orderId === orderId);
+  if (!order) throw new Error('Order not found');
+
+  const chapters = Array.isArray(order.generatedChapters) ? order.generatedChapters.slice() : [];
+  const outline = order.generatedOutline || buildFallbackOutline();
+  const targetChapter = (outline.chapters || [])[chapterIndex];
+  if (!targetChapter) throw new Error('Chapter not found');
+
+  await updateStoredOrder(orderId, {
+    status: 'generating',
+    generationStatus: `Перегенерируем главу ${chapterIndex + 1}: ${targetChapter.title}`
+  });
+
+  const sourceQuestions = (order.questionnaire?.questions || []).filter((item) => String(item.answer || '').trim());
+  const relatedQuestions = pickRelevantQuestions(sourceQuestions, targetChapter);
+  const previousChapters = chapters
+    .map((item, index) => ({ ...item, index }))
+    .filter((item) => item.index !== chapterIndex)
+    .map((item) => ({ title: item.title, text: item.text }));
+
+  const regeneratedText = await generateChapterText(
+    { ...order, questionnaire: { questions: relatedQuestions } },
+    outline,
+    targetChapter,
+    previousChapters,
+    instruction
+  );
+
+  const nextChapters = outline.chapters.slice(0, getChapterLimit(order)).map((chapter, index) => ({
+    title: chapter.title,
+    text: index === chapterIndex ? regeneratedText : (chapters[index]?.text || '')
+  }));
+
+  const chaptersForMerge = nextChapters.filter((item) => String(item.text || '').trim());
+  const mergedBook = await callModel(buildMergePrompt(order, outline, chaptersForMerge), { stage: 'merge' });
+  const editedBook = await callModel(buildEditPrompt(order, mergedBook), { stage: 'editor' });
+  const generatedBook = shouldKeepMergedBook(mergedBook, editedBook) ? mergedBook : editedBook;
+  const generatedBookPath = persistGeneratedBook(orderId, generatedBook);
+
+  return updateStoredOrder(orderId, {
+    status: 'generated',
+    generationStatus: `Глава ${chapterIndex + 1} перегенерирована и книга пересобрана.`,
+    generatedBook,
+    generatedBookPath,
+    generatedOutline: outline,
+    generatedChapters: nextChapters
+  });
+}
+
+async function callModel(prompt, options = {}) {
+  const messages = [];
+  if (options.json) {
+    messages.push({
+      role: 'system',
+      content:
+        'Верни строго валидный JSON без markdown и без пояснений. Формат: {"title":"...","subtitle":"...","finalMessageIdea":"...","chapters":[{"title":"...","summary":"...","factsToUse":["..."]}]}'
+    });
+  } else {
+    messages.push({
+      role: 'system',
+      content: 'Верни только готовый текст без markdown-обрамления и без пояснений от себя.'
+    });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      'HTTP-Referer': PUBLIC_BASE_URL,
+      'X-Title': 'Fabrika Vospominaniy Books'
+    },
+    body: JSON.stringify({
+      model: pickModelForStage(options.stage),
+      messages,
+      temperature: pickTemperature(options),
+      max_tokens: pickMaxTokensForStage(options.stage),
+      provider: {
+        sort: 'throughput'
+      }
+    })
+  });
+  if (!response.ok) throw new Error(`OpenRouter API error ${response.status}`);
+  const result = await response.json();
+  const text = extractResponseText(result);
+  return options.json ? parseOutlineJson(text) : text;
+}
+
+function pickModelForStage(stage) {
+  if (stage === 'outline') return OPENROUTER_MODEL_OUTLINE;
+  if (stage === 'editor') return OPENROUTER_MODEL_EDITOR;
+  return OPENROUTER_MODEL_WRITER;
+}
+
+function pickMaxTokensForStage(stage) {
+  if (stage === 'outline') return OPENROUTER_OUTLINE_MAX_TOKENS;
+  if (stage === 'expand') return OPENROUTER_EXPAND_MAX_TOKENS;
+  if (stage === 'merge' || stage === 'editor') return OPENROUTER_EDIT_MAX_TOKENS;
+  return OPENROUTER_CHAPTER_MAX_TOKENS;
+}
+
+function pickTemperature(options) {
+  if (options.json) return 0.2;
+  if (options.stage === 'editor') return 0.35;
+  if (options.stage === 'merge') return 0.55;
+  return 0.8;
+}
+
+function extractResponseText(result) {
+  return String(result.choices?.[0]?.message?.content || '').trim();
+}
+
+function parseOutlineJson(text) {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) {
+    throw new Error('Модель вернула пустой outline');
+  }
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (_) {
+    const fenced = cleaned.match(/```json\s*([\s\S]*?)```/i) || cleaned.match(/```([\s\S]*?)```/i);
+    if (fenced) {
+      try {
+        return JSON.parse(fenced[1].trim());
+      } catch (_) {}
+    }
+
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const sliced = cleaned.slice(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(sliced);
+      } catch (_) {}
+    }
+  }
+
+  return buildFallbackOutline();
+}
+
+function buildFallbackOutline() {
+  return {
+    title: 'Персональная книга',
+    subtitle: 'Собрано по вашим ответам',
+    finalMessageIdea: 'Сохранить тепло, близость и важные моменты.',
+    chapters: [
+      { title: 'Здравствуй, маленькое чудо', summary: 'Представить ребенка, его имя, возраст, характер и первое ощущение от него.', factsToUse: ['имя', 'возраст', 'характер', 'милые привычки'] },
+      { title: 'Обычное счастье каждого дня', summary: 'Показать повседневные ритуалы, смех, любимые фразы и домашнее тепло.', factsToUse: ['привычка', 'смех', 'каждый день', 'объятия'] },
+      { title: 'Ваши самые теплые моменты', summary: 'Развернуть один-два самых сильных совместных эпизода в полноценные сцены.', factsToUse: ['воспоминания', 'какао', 'зима', 'совместные моменты'] },
+      { title: 'Мир ребенка', summary: 'Раскрыть любимые игры, занятия, игрушки, книги и внутренний мир ребенка.', factsToUse: ['игры', 'игрушки', 'рисование', 'сказки', 'любимые занятия'] },
+      { title: 'Мечты, которые растут вместе с ней', summary: 'Поговорить о детских мечтах и надеждах на будущее.', factsToUse: ['мечты', 'море', 'домик', 'будущее'] },
+      { title: 'Чему нас учит любовь', summary: 'Показать, как ребенок меняет взрослых, чему учит и за что ему благодарны.', factsToUse: ['благодарность', 'чему научил', 'любовь', 'свет'] },
+      { title: 'Письмо в будущее', summary: 'Закончить книгу личным, теплым и поддерживающим обращением к ребенку.', factsToUse: ['пожелания', 'главное послание', 'будущее', 'важные слова'] }
+    ]
+  };
+}
+
+async function notifyManager(order, generationResult) {
+  if (!SEND_TO_TELEGRAM) {
+    return {
+      sent: false,
+      managerDeliveryStatus: 'Отправка в Telegram временно отключена. Книга сохранена локально и доступна в админке.'
+    };
+  }
+
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_MANAGER_CHAT_ID) {
+    return { sent: false, managerDeliveryStatus: 'Telegram Bot API не подключен. Результат сохранен в базе и на сервере.' };
+  }
+
+  const message = [
+    'Новый заказ Fabrika Books',
+    `Заказ: ${order.orderId}`,
+    `Клиент: ${order.customer.name}`,
+    `Контакт: ${order.customer.contact}`,
+    `Тип книги: ${order.bookType.title}`,
+    `Статус генерации: ${generationResult.generationStatus}`,
+    `Фото: ${(order.photos || []).length} шт.`,
+    '',
+    `Ответов в анкете: ${(order.questionnaire?.questions || []).filter((item) => String(item.answer || '').trim()).length}`,
+    '',
+    'Книга будет отправлена следующим сообщением как текстовый файл.'
+  ].join('\n');
+
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: TELEGRAM_MANAGER_CHAT_ID, text: message })
+  });
+
+  if (!response.ok) {
+    return { sent: false, managerDeliveryStatus: `Telegram API ответил ошибкой ${response.status}.` };
+  }
+
+  const form = new FormData();
+  form.append('chat_id', TELEGRAM_MANAGER_CHAT_ID);
+  form.append('caption', `Книга по заказу ${order.orderId}`);
+  form.append(
+    'document',
+    new Blob([generationResult.generatedBook || ''], { type: 'text/plain;charset=utf-8' }),
+    `${order.orderId}.txt`
+  );
+
+  const documentResponse = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
+    method: 'POST',
+    body: form
+  });
+
+  if (!documentResponse.ok) {
+    return {
+      sent: false,
+      managerDeliveryStatus: `Сообщение ушло, но файл книги не отправился. Telegram API ${documentResponse.status}.`
+    };
+  }
+
+  return { sent: true, managerDeliveryStatus: 'Менеджеру отправлены сообщение и txt-файл с книгой в Telegram.' };
+}
+
+function sendJson(res, code, payload) {
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(payload));
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('Invalid JSON body')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+function serveStatic(req, res) {
+  const targetPath = req.url === '/' ? '/index.html' : req.url;
+  const safePath = path.normalize(targetPath).replace(/^\.+/, '');
+  const filePath = path.join(__dirname, safePath);
+  if (!filePath.startsWith(__dirname)) return sendJson(res, 403, { error: 'Forbidden' });
+
+  fs.readFile(filePath, (error, data) => {
+    if (error) return sendJson(res, 404, { error: 'Not found' });
+    res.writeHead(200, { 'Content-Type': getContentType(filePath) });
+    res.end(data);
+  });
+}
+
+function getContentType(filePath) {
+  if (filePath.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (filePath.endsWith('.js')) return 'application/javascript; charset=utf-8';
+  if (filePath.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (filePath.endsWith('.png')) return 'image/png';
+  if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) return 'image/jpeg';
+  if (filePath.endsWith('.webp')) return 'image/webp';
+  return 'text/plain; charset=utf-8';
+}
