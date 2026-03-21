@@ -309,6 +309,7 @@ const els = {
 init();
 
 function init() {
+  if (handleResetFlag()) return;
   initTelegram();
   if (!appState.selectedBookTypeId && appState.selectedBookType) {
     const matchedType = bookTypes.find((type) => type.title === appState.selectedBookType);
@@ -332,6 +333,19 @@ function init() {
   restoreInputs();
   setActiveAppSection('section-home');
   showScreen(appState.activeScreen || 'screen-hero', { scroll: false });
+}
+
+function handleResetFlag() {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('reset') !== '1') return false;
+    localStorage.removeItem(STORAGE_KEY);
+    url.searchParams.delete('reset');
+    window.location.replace(url.toString());
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
 function renderBookList() {
