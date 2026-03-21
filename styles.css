@@ -137,11 +137,14 @@ label, input, textarea, button {
 }
 
 .home-header h2 {
-  font-size: clamp(28px, 7vw, 44px);
+  font-size: clamp(22px, 5.4vw, 34px);
+  line-height: 1.05;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.24);
 }
 
 .home-header .eyebrow {
-  opacity: 0.78;
+  color: #df6657;
+  opacity: 1;
 }
 
 .home-header .secondary-button {
@@ -224,6 +227,12 @@ label, input, textarea, button {
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(255, 253, 251, 0.94), rgba(253, 249, 245, 0.88));
   box-shadow: var(--shadow-card);
+}
+
+.home-header.glass-card {
+  background: linear-gradient(90deg, #222124, #272529);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 26px rgba(21, 18, 18, 0.25);
 }
 
 .hero-card,
