@@ -180,20 +180,21 @@ label, input, textarea, button {
 }
 
 .bottom-nav-item {
-  min-height: 40px;
+  min-height: 42px;
   padding: 8px 6px;
-  border-radius: 10px;
-  background: #121214;
-  color: #f3ece7;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #22201e;
+  border: 1px solid rgba(31, 26, 24, 0.12);
   font-size: 12px;
   font-weight: 600;
 }
 
 .bottom-nav-item.is-active {
-  background: #1b1b1e;
-  color: #fff8f2;
-  border-color: rgba(216, 93, 79, 0.45);
+  background: #fffdfb;
+  color: #191715;
+  border-color: rgba(216, 93, 79, 0.55);
+  box-shadow: 0 4px 10px rgba(31, 26, 24, 0.1);
 }
 
 .home-quick-button {
@@ -469,30 +470,33 @@ label, input, textarea, button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
+  min-height: 52px;
+  padding: 12px 16px;
+  border-radius: 16px;
   transition: background-color 0.18s ease, opacity 0.18s ease, transform 0.12s ease;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .primary-button {
   background: #fffdfb;
-  color: var(--text);
-  border: 1px solid rgba(31, 26, 24, 0.1);
+  color: #1e1b18;
+  border: 1px solid rgba(31, 26, 24, 0.11);
+  box-shadow: 0 4px 10px rgba(31, 26, 24, 0.08);
 }
 
 .secondary-button {
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--text);
-  border: 1px solid rgba(31, 26, 24, 0.09);
+  background: rgba(255, 255, 255, 0.8);
+  color: #1f1b18;
+  border: 1px solid rgba(31, 26, 24, 0.11);
+  box-shadow: 0 4px 10px rgba(31, 26, 24, 0.06);
 }
 
 .ghost-button,
 .icon-button {
-  background: rgba(255, 255, 255, 0.62);
-  color: var(--text);
-  border: 1px solid rgba(31, 26, 24, 0.09);
+  background: rgba(255, 255, 255, 0.76);
+  color: #1f1b18;
+  border: 1px solid rgba(31, 26, 24, 0.11);
 }
 
 .icon-button {
@@ -509,7 +513,8 @@ label, input, textarea, button {
 .ghost-button.is-pressed,
 .upload-card.is-pressed,
 .icon-button.is-pressed {
-  opacity: 0.92;
+  opacity: 0.96;
+  background: #f7f2ee;
   transform: scale(0.985);
 }
 
