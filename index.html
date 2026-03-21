@@ -13,51 +13,64 @@
         <section class="screen is-active" id="screen-hero">
           <div class="home-header glass-card">
             <div>
-              <p class="eyebrow">Книги</p>
-              <h2>Библиотека</h2>
+              <p class="eyebrow">Mini App</p>
+              <h2>Фабрика воспоминаний</h2>
             </div>
-            <button class="secondary-button" type="button" data-go-screen="screen-book-type">Новый заказ</button>
+            <button class="secondary-button" type="button" data-go-screen="screen-book-type">Создать</button>
           </div>
 
-          <nav class="home-nav" aria-label="Разделы">
-            <button class="home-tab is-active" type="button" data-home-tab="tab-books">Книги</button>
-            <button class="home-tab" type="button" data-home-tab="tab-reviews">Отзывы</button>
-            <button class="home-tab" type="button" data-home-tab="tab-actions">Действия</button>
+          <div class="app-sections">
+            <section class="app-section is-active" id="section-home">
+              <div class="story-block">
+                <div class="section-heading">
+                  <p class="eyebrow">Home</p>
+                  <h3>Продолжить</h3>
+                </div>
+                <div class="action-row">
+                  <button class="primary-button" type="button" data-go-screen="screen-book-type">Создать</button>
+                  <button class="secondary-button" type="button" data-go-screen="screen-review">Открыть</button>
+                  <button class="secondary-button" type="button" data-go-screen="screen-photos">Фото</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="app-section" id="section-books">
+              <div class="story-block">
+                <div class="section-heading">
+                  <p class="eyebrow">Books</p>
+                  <h3>Библиотека</h3>
+                </div>
+                <div class="book-list" id="bookList"></div>
+              </div>
+            </section>
+
+            <section class="app-section" id="section-favorites">
+              <div class="story-block">
+                <div class="section-heading">
+                  <p class="eyebrow">Favorites</p>
+                  <h3>Избранное</h3>
+                </div>
+                <div class="book-list" id="favoritesList"></div>
+              </div>
+            </section>
+
+            <section class="app-section" id="section-profile">
+              <div class="story-block">
+                <div class="section-heading">
+                  <p class="eyebrow">Profile</p>
+                  <h3>Профиль</h3>
+                </div>
+                <div class="book-list" id="profileList"></div>
+              </div>
+            </section>
+          </div>
+
+          <nav class="bottom-nav glass-card" aria-label="Навигация">
+            <button class="bottom-nav-item is-active" type="button" data-app-section="section-home">Home</button>
+            <button class="bottom-nav-item" type="button" data-app-section="section-books">Books</button>
+            <button class="bottom-nav-item" type="button" data-app-section="section-favorites">Favorites</button>
+            <button class="bottom-nav-item" type="button" data-app-section="section-profile">Profile</button>
           </nav>
-
-          <div class="home-panel is-active" id="tab-books">
-            <div class="story-block">
-              <div class="section-heading">
-                <p class="eyebrow">Подборка</p>
-                <h3>Популярные книги</h3>
-              </div>
-              <div class="book-list" id="bookList"></div>
-            </div>
-          </div>
-
-          <div class="home-panel" id="tab-reviews">
-            <div class="story-block">
-              <div class="section-heading">
-                <p class="eyebrow">Отзывы</p>
-                <h3>Что пишут читатели</h3>
-              </div>
-              <div class="book-list" id="featuredReviewList"></div>
-            </div>
-          </div>
-
-          <div class="home-panel" id="tab-actions">
-            <div class="story-block">
-              <div class="section-heading">
-                <p class="eyebrow">Быстрые действия</p>
-                <h3>Продолжить работу</h3>
-              </div>
-              <div class="action-row">
-                <button class="primary-button" type="button" data-go-screen="screen-book-type">Создать заказ</button>
-                <button class="secondary-button" type="button" data-go-screen="screen-review">Проверить ответы</button>
-                <button class="secondary-button" type="button" data-go-screen="screen-photos">Открыть фото</button>
-              </div>
-            </div>
-          </div>
         </section>
 
         <section class="screen" id="screen-book-type">
@@ -74,7 +87,7 @@
             </label>
             <div class="action-row">
               <button class="secondary-button" type="button" data-go-screen="screen-hero">Назад</button>
-              <button class="primary-button" type="button" id="confirmBookType">Дальше</button>
+              <button class="primary-button" type="button" id="confirmBookType">Далее</button>
             </div>
           </div>
         </section>
@@ -102,7 +115,7 @@
                 <p class="eyebrow">Вариант 1</p>
                 <h3>Тестовая оплата</h3>
                 <p>Демо-режим. Деньги не списываются.</p>
-                <button class="primary-button" type="button" id="mockPaymentButton">Оплатить 5 990 ₽ (тест)</button>
+                <button class="primary-button" type="button" id="mockPaymentButton">Оплатить</button>
               </article>
               <article class="payment-card">
                 <p class="eyebrow">Вариант 2</p>
@@ -118,7 +131,7 @@
             <p class="status-text" id="paymentStatusText">Доступ пока закрыт.</p>
             <div class="action-row">
               <button class="secondary-button" type="button" data-go-screen="screen-book-type">Назад</button>
-              <button class="primary-button" type="button" id="goToQuestionnaire" disabled>К анкете</button>
+              <button class="primary-button" type="button" id="goToQuestionnaire" disabled>Открыть</button>
             </div>
           </div>
         </section>
@@ -141,7 +154,7 @@
               <button class="secondary-button wide" type="button" id="prevQuestionButton">Назад</button>
               <div class="action-row compact-row">
                 <button class="ghost-button" type="button" id="skipQuestionButton">Пропустить</button>
-                <button class="primary-button" type="button" id="nextQuestionButton">Дальше</button>
+                <button class="primary-button" type="button" id="nextQuestionButton">Далее</button>
               </div>
             </div>
           </div>
@@ -157,8 +170,8 @@
             <div class="review-stats" id="reviewStats"></div>
             <div class="review-list" id="reviewList"></div>
             <div class="action-row">
-              <button class="secondary-button" type="button" id="backToQuestions">К анкете</button>
-              <button class="primary-button" type="button" data-go-screen="screen-photos">К фото</button>
+              <button class="secondary-button" type="button" id="backToQuestions">Открыть</button>
+              <button class="primary-button" type="button" data-go-screen="screen-photos">Фото</button>
             </div>
           </div>
         </section>
@@ -221,9 +234,9 @@
               </ul>
             </div>
             <div class="action-row">
-              <button class="secondary-button" type="button" id="restartFlowButton">Создать новый заказ</button>
-              <button class="secondary-button" type="button" id="retryGenerationButton">Повторить генерацию</button>
-              <button class="primary-button" type="button" data-action="open-telegram">Написать менеджеру</button>
+              <button class="secondary-button" type="button" id="restartFlowButton">Создать</button>
+              <button class="secondary-button" type="button" id="retryGenerationButton">Повторить</button>
+              <button class="primary-button" type="button" data-action="open-telegram">Открыть</button>
             </div>
           </div>
         </section>

@@ -26,7 +26,7 @@
 
   --radius-xl: 16px;
   --radius-lg: 14px;
-  --radius-md: 12px;
+  --radius-md: 10px;
   --radius-sm: 10px;
   --shadow-card:
     0 1px 1px color-mix(in srgb, var(--tg-text-color) 4%, transparent),
@@ -72,7 +72,7 @@ img {
 .app-shell {
   width: min(100%, 760px);
   margin: 0 auto;
-  padding: calc(10px + env(safe-area-inset-top)) 10px calc(16px + env(safe-area-inset-bottom));
+  padding: calc(10px + env(safe-area-inset-top)) 10px calc(76px + env(safe-area-inset-bottom));
 }
 
 .hero-card h2,
@@ -103,10 +103,59 @@ img {
   flex-direction: column;
   min-height: calc(100vh - 26px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   gap: 10px;
+  animation: screen-fade-in 0.16s ease-out;
 }
 
 #screen-hero.is-active {
   justify-content: flex-start;
+}
+
+.home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.app-sections {
+  display: grid;
+  gap: 10px;
+  flex: 1;
+}
+
+.app-section {
+  display: none;
+}
+
+.app-section.is-active {
+  display: block;
+  animation: section-fade-in 0.14s ease-out;
+}
+
+.bottom-nav {
+  position: sticky;
+  bottom: calc(6px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  margin-top: auto;
+  z-index: 3;
+}
+
+.bottom-nav-item {
+  min-height: 40px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bottom-nav-item.is-active {
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
 .glass-card,
@@ -281,7 +330,7 @@ img {
   border-radius: 0;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.14s ease;
+  transition: background-color 0.14s ease, transform 0.12s ease;
 }
 
 .book-list-item + .book-list-item {
@@ -291,6 +340,7 @@ img {
 .book-list-item:active,
 .book-list-item.is-pressed {
   background: color-mix(in srgb, var(--tg-secondary-bg-color) 72%, transparent);
+  transform: scale(0.997);
 }
 
 .book-cover {
@@ -334,6 +384,10 @@ img {
   white-space: nowrap;
 }
 
+.profile-item {
+  cursor: default;
+}
+
 .section-heading {
   text-align: left;
 }
@@ -358,26 +412,27 @@ img {
   min-height: 44px;
   padding: 10px 14px;
   border-radius: var(--radius-md);
-  transition: background-color 0.18s ease, opacity 0.18s ease;
+  transition: background-color 0.18s ease, opacity 0.18s ease, transform 0.12s ease;
+  font-weight: 600;
 }
 
 .primary-button {
   background: var(--accent);
   color: var(--accent-text);
-  font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--accent) 82%, var(--line));
 }
 
 .secondary-button {
   background: var(--surface-alt);
   color: var(--text);
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--tg-text-color) 14%, transparent);
 }
 
 .ghost-button,
 .icon-button {
-  background: transparent;
-  color: var(--tg-link-color);
-  border: 1px solid var(--line);
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--tg-text-color) 14%, transparent);
 }
 
 .icon-button {
@@ -395,6 +450,7 @@ img {
 .upload-card.is-pressed,
 .icon-button.is-pressed {
   opacity: 0.92;
+  transform: scale(0.985);
 }
 
 .choice-item:active,
@@ -402,6 +458,29 @@ img {
 .choice-item.is-pressed,
 .checkbox-item.is-pressed {
   background: color-mix(in srgb, var(--tg-secondary-bg-color) 72%, var(--surface));
+  transform: scale(0.995);
+}
+
+@keyframes screen-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes section-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .primary-button:disabled,
@@ -556,6 +635,7 @@ img {
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--surface);
+  transition: background-color 0.16s ease, transform 0.12s ease;
 }
 
 .choice-item input,

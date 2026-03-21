@@ -6,164 +6,381 @@
     <title>Fabrika Books Admin</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
-      .admin-shell { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
-      .admin-grid { display: grid; gap: 16px; }
-      .admin-grid.two { grid-template-columns: 1fr; }
-      .admin-card { padding: 18px; }
-      .orders-list { display: grid; gap: 10px; max-height: 70vh; overflow: auto; }
-      .order-row { text-align: left; width: 100%; padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.78); border: 1px solid rgba(31,26,24,0.08); }
-      .order-row.active { border-color: rgba(216,79,67,0.3); box-shadow: 0 8px 22px rgba(216,79,67,0.08); }
+      .admin-shell { max-width: 1320px; margin: 0 auto; padding: 14px 12px 30px; }
+      .admin-layout { display: grid; gap: 12px; grid-template-columns: 1fr; }
+      .admin-sidebar, .admin-content { padding: 14px; }
+      .toolbar { display: grid; gap: 8px; margin-top: 12px; }
+      .toolbar input, .toolbar select { width: 100%; }
+      .orders-list { display: grid; gap: 8px; margin-top: 12px; max-height: 62vh; overflow: auto; }
+      .order-row {
+        width: 100%;
+        text-align: left;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: 10px 12px;
+      }
+      .order-row.active { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+      .order-row .line { display: flex; justify-content: space-between; gap: 8px; }
+      .order-row .line + .line { margin-top: 4px; }
+      .muted { color: var(--text-soft); font-size: 12px; }
       .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-      .detail-block { margin-top: 14px; }
-      .detail-block pre { white-space: pre-wrap; background: rgba(255,255,255,0.7); padding: 12px; border-radius: 14px; border: 1px solid rgba(31,26,24,0.08); }
-      .photo-links { display: grid; gap: 8px; }
-      .chapter-list { display: grid; gap: 12px; }
-      .chapter-card { padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.72); border: 1px solid rgba(31,26,24,0.08); }
-      .chapter-card h4 { margin-bottom: 6px; }
-      .chapter-actions { display: grid; gap: 8px; margin-top: 10px; }
-      .chapter-actions textarea { min-height: 84px; resize: vertical; }
-      @media (min-width: 900px) { .admin-grid.two { grid-template-columns: 360px 1fr; } }
+      .stats { display: flex; flex-wrap: wrap; gap: 8px; }
+      .detail-grid { display: grid; gap: 12px; margin-top: 12px; }
+      .detail-block { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 12px; }
+      .detail-block h3 { margin: 0 0 8px; font-size: 14px; }
+      .detail-block pre { margin: 0; white-space: pre-wrap; background: var(--surface-alt); border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 34vh; overflow: auto; }
+      .chapter-list { display: grid; gap: 10px; }
+      .chapter-card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-alt); padding: 10px; }
+      .chapter-card h4 { margin: 0 0 6px; font-size: 14px; }
+      .chapter-card textarea { min-height: 80px; margin-top: 8px; }
+      .chapter-actions { display: flex; gap: 8px; margin-top: 8px; }
+      .inline-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      @media (min-width: 980px) {
+        .admin-layout { grid-template-columns: 360px 1fr; align-items: start; }
+        .admin-sidebar { position: sticky; top: 12px; }
+      }
     </style>
   </head>
   <body>
     <div class="admin-shell">
-      <header class="topbar">
-        <div class="brand-lockup">
-          <div class="brand-mark">ФВ</div>
-          <div>
-            <p class="eyebrow">Manager Panel</p>
-            <h1>Фабрика воспоминаний books admin</h1>
-          </div>
+      <header class="glass-card admin-content">
+        <div class="section-heading">
+          <p class="eyebrow">Admin</p>
+          <h2>Управление заказами и генерацией</h2>
+          <p id="healthText">Проверяем состояние сервера...</p>
         </div>
-        <button class="ghost-button" type="button" id="refreshOrders">Обновить</button>
+        <div class="stats" id="globalStats"></div>
+        <div class="inline-actions">
+          <button class="secondary-button" type="button" id="refreshOrders">Обновить</button>
+          <button class="secondary-button" type="button" id="toggleAutoRefresh">Автообновление: вкл</button>
+        </div>
       </header>
 
-      <main class="admin-grid two">
-        <section class="glass-card admin-card">
+      <main class="admin-layout">
+        <section class="glass-card admin-sidebar">
           <div class="section-heading">
-            <p class="eyebrow">Заказы</p>
-            <h2>Список заказов</h2>
+            <p class="eyebrow">Orders</p>
+            <h3>Список заказов</h3>
           </div>
+
+          <div class="toolbar">
+            <input class="input-control" type="search" id="searchInput" placeholder="Поиск: id, клиент, контакт" />
+            <select class="select-control" id="statusFilter">
+              <option value="all">Все статусы</option>
+              <option value="queued">queued</option>
+              <option value="generating">generating</option>
+              <option value="generated">generated</option>
+              <option value="mock-generated">mock-generated</option>
+              <option value="sent_to_manager">sent_to_manager</option>
+              <option value="error">error</option>
+            </select>
+          </div>
+
           <div class="orders-list" id="ordersList"></div>
         </section>
 
-        <section class="glass-card admin-card">
+        <section class="glass-card admin-content">
           <div class="section-heading">
-            <p class="eyebrow">Карточка</p>
-            <h2 id="detailTitle">Выберите заказ</h2>
-            <p id="detailSubtitle">Здесь будет текст книги, ответы и ссылки на фото.</p>
+            <p class="eyebrow">Detail</p>
+            <h3 id="detailTitle">Выберите заказ</h3>
+            <p id="detailSubtitle">Здесь будут подробности генерации и редактирования.</p>
           </div>
-          <div id="orderDetail"></div>
+          <div id="orderDetail" class="detail-grid"></div>
         </section>
       </main>
     </div>
 
     <script>
-      const listEl = document.getElementById('ordersList');
-      const detailEl = document.getElementById('orderDetail');
-      const detailTitleEl = document.getElementById('detailTitle');
-      const detailSubtitleEl = document.getElementById('detailSubtitle');
-      const refreshButton = document.getElementById('refreshOrders');
+      const els = {
+        list: document.getElementById('ordersList'),
+        detail: document.getElementById('orderDetail'),
+        detailTitle: document.getElementById('detailTitle'),
+        detailSubtitle: document.getElementById('detailSubtitle'),
+        refresh: document.getElementById('refreshOrders'),
+        toggleAutoRefresh: document.getElementById('toggleAutoRefresh'),
+        searchInput: document.getElementById('searchInput'),
+        statusFilter: document.getElementById('statusFilter'),
+        healthText: document.getElementById('healthText'),
+        globalStats: document.getElementById('globalStats')
+      };
+
+      let allOrders = [];
       let activeOrderId = '';
+      let autoRefresh = true;
+      let autoRefreshTimer = null;
 
-      refreshButton.addEventListener('click', loadOrders);
-      loadOrders();
+      init();
 
-      async function loadOrders() {
-        const response = await fetch('/api/orders');
-        const data = await response.json();
-        const orders = data.orders || [];
-        listEl.innerHTML = '';
-
-        if (!orders.length) {
-          listEl.innerHTML = '<div class="empty-state">Заказов пока нет.</div>';
-          detailEl.innerHTML = '';
-          return;
-        }
-
-        orders.forEach((order) => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = `order-row ${order.orderId === activeOrderId ? 'active' : ''}`;
-          button.innerHTML = `
-            <strong>${order.customer?.name || 'Без имени'}</strong>
-            <div>${order.bookType?.title || 'Без типа книги'}</div>
-            <div class="mono">${order.orderId}</div>
-            <div>Статус: ${order.status || 'unknown'}</div>
-          `;
-          button.addEventListener('click', () => loadOrder(order.orderId));
-          listEl.appendChild(button);
+      function init() {
+        els.refresh.addEventListener('click', loadOrders);
+        els.toggleAutoRefresh.addEventListener('click', () => {
+          autoRefresh = !autoRefresh;
+          els.toggleAutoRefresh.textContent = `Автообновление: ${autoRefresh ? 'вкл' : 'выкл'}`;
+          setupAutoRefresh();
         });
+        els.searchInput.addEventListener('input', renderOrdersList);
+        els.statusFilter.addEventListener('change', renderOrdersList);
+        loadHealth();
+        loadOrders();
+        setupAutoRefresh();
+      }
 
-        if (!activeOrderId) {
-          loadOrder(orders[0].orderId);
+      function setupAutoRefresh() {
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        if (!autoRefresh) return;
+        autoRefreshTimer = setInterval(() => {
+          loadOrders({ silent: true });
+          loadHealth({ silent: true });
+        }, 8000);
+      }
+
+      async function loadHealth(options = {}) {
+        try {
+          const response = await fetch('/api/health');
+          const health = await response.json();
+          els.healthText.textContent = `Режим: ${health.mode} · Очередь: ${health.queueLength} · В работе: ${health.currentlyProcessing ? 'да' : 'нет'}`;
+        } catch (error) {
+          if (!options.silent) els.healthText.textContent = 'Не удалось получить /api/health';
         }
       }
 
+      async function loadOrders(options = {}) {
+        try {
+          const response = await fetch('/api/orders');
+          const data = await response.json();
+          allOrders = Array.isArray(data.orders) ? data.orders : [];
+          updateStats(allOrders);
+          renderOrdersList();
+
+          if (!activeOrderId && allOrders.length) {
+            activeOrderId = allOrders[0].orderId;
+            await loadOrder(activeOrderId);
+          } else if (activeOrderId) {
+            const exists = allOrders.some((o) => o.orderId === activeOrderId);
+            if (!exists) {
+              activeOrderId = allOrders[0]?.orderId || '';
+            }
+            if (activeOrderId) await loadOrder(activeOrderId);
+          }
+        } catch (error) {
+          if (!options.silent) {
+            els.list.innerHTML = '<div class="empty-state">Ошибка загрузки заказов.</div>';
+          }
+        }
+      }
+
+      function updateStats(orders) {
+        const queued = orders.filter((o) => o.status === 'queued').length;
+        const generating = orders.filter((o) => o.status === 'generating').length;
+        const done = orders.filter((o) => ['generated', 'mock-generated', 'sent_to_manager'].includes(o.status)).length;
+        const errors = orders.filter((o) => o.status === 'error').length;
+        els.globalStats.innerHTML = [
+          `<span class="summary-chip">Всего: ${orders.length}</span>`,
+          `<span class="summary-chip">Queued: ${queued}</span>`,
+          `<span class="summary-chip">Generating: ${generating}</span>`,
+          `<span class="summary-chip">Done: ${done}</span>`,
+          `<span class="summary-chip">Error: ${errors}</span>`
+        ].join('');
+      }
+
+      function renderOrdersList() {
+        const query = els.searchInput.value.trim().toLowerCase();
+        const status = els.statusFilter.value;
+
+        const filtered = allOrders.filter((order) => {
+          if (status !== 'all' && order.status !== status) return false;
+          if (!query) return true;
+          const hay = [
+            order.orderId,
+            order.customer?.name,
+            order.customer?.contact,
+            order.bookType?.title,
+            order.status
+          ].join(' ').toLowerCase();
+          return hay.includes(query);
+        });
+
+        els.list.innerHTML = '';
+
+        if (!filtered.length) {
+          els.list.innerHTML = '<div class="empty-state">Ничего не найдено.</div>';
+          return;
+        }
+
+        filtered.forEach((order) => {
+          const answeredCount = (order.questionnaire?.questions || []).filter((q) => String(q.answer || '').trim()).length;
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = `order-row ${order.orderId === activeOrderId ? 'active' : ''}`;
+          row.innerHTML = `
+            <div class="line"><strong>${escapeHtml(order.customer?.name || 'Без имени')}</strong><span class="muted">${escapeHtml(order.status || 'unknown')}</span></div>
+            <div class="line"><span class="muted">${escapeHtml(order.bookType?.title || 'Без типа')}</span><span class="muted">Ответов: ${answeredCount}</span></div>
+            <div class="line"><span class="mono">${escapeHtml(order.orderId || '')}</span><span class="muted">Фото: ${(order.photos || []).length}</span></div>
+          `;
+          row.addEventListener('click', () => loadOrder(order.orderId));
+          els.list.appendChild(row);
+        });
+      }
+
       async function loadOrder(orderId) {
-        activeOrderId = orderId;
-        const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
-        const order = await response.json();
-        detailTitleEl.textContent = `${order.customer?.name || 'Без имени'} · ${order.bookType?.title || ''}`;
-        detailSubtitleEl.textContent = `Статус: ${order.status || ''} · Контакт: ${order.customer?.contact || ''}`;
+        try {
+          activeOrderId = orderId;
+          renderOrdersList();
 
-        const photos = (order.photos || []).map((photo) => `<a href="${photo.publicUrl}" target="_blank">${photo.name}</a>`).join('');
-        const answers = (order.questionnaire?.questions || [])
-          .filter((q) => String(q.answer || '').trim())
-          .slice(0, 20)
-          .map((q) => `<li><strong>${q.number}. ${q.text}</strong><br>${q.answer}</li>`)
-          .join('');
-        const chapterCards = ((order.generatedChapters || []).length ? order.generatedChapters : (order.generatedOutline?.chapters || []).map((chapter) => ({ title: chapter.title, text: '' })))
-          .map((chapter, index) => `
-            <div class="chapter-card">
-              <h4>${index + 1}. ${escapeHtml(chapter.title || `Глава ${index + 1}`)}</h4>
-              <div class="mono">Объем: ${countWords(chapter.text || '')} слов</div>
-              <pre>${escapeHtml(chapter.text || 'Текст этой главы пока не сохранен отдельно. Полная книга могла быть собрана без покадрового хранения.')}</pre>
-              <div class="chapter-actions">
-                <textarea id="chapterInstruction-${index}" placeholder="Например: Сделай эту главу длиннее, добавь больше теплых бытовых сцен и убери повтор фразы про утро."></textarea>
-                <button class="secondary-button regenerate-chapter-button" type="button" data-index="${index}">
-                  Перегенерировать эту главу
-                </button>
+          const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+          const order = await response.json();
+          if (!response.ok) throw new Error(order.error || 'Order load failed');
+
+          const answered = (order.questionnaire?.questions || []).filter((q) => String(q.answer || '').trim());
+          const photos = (order.photos || [])
+            .map((photo) => `<a href="${photo.publicUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(photo.name)}</a>`)
+            .join('<br>');
+
+          els.detailTitle.textContent = `${order.customer?.name || 'Без имени'} · ${order.bookType?.title || 'Без типа'}`;
+          els.detailSubtitle.textContent = `Статус: ${order.status || ''} · Контакт: ${order.customer?.contact || ''}`;
+
+          const chapterCards = ((order.generatedChapters || []).length
+            ? order.generatedChapters
+            : (order.generatedOutline?.chapters || []).map((chapter) => ({ title: chapter.title, text: '' })))
+            .map((chapter, index) => {
+              const chapterText = chapter.text || '';
+              return `
+                <article class="chapter-card">
+                  <h4>${index + 1}. ${escapeHtml(chapter.title || `Глава ${index + 1}`)}</h4>
+                  <div class="muted">${countWords(chapterText)} слов</div>
+                  <pre>${escapeHtml(chapterText || 'Текст главы пока недоступен.')}</pre>
+                  <textarea class="input-control" id="chapterInstruction-${index}" placeholder="Например: Усиль бытовые детали, добавь диалоги, убери повторы."></textarea>
+                  <div class="chapter-actions">
+                    <button class="secondary-button regenerate-button" type="button" data-index="${index}">Перегенерировать главу</button>
+                  </div>
+                </article>
+              `;
+            })
+            .join('');
+
+          const aiDiag = order.aiDiagnostics
+            ? `<pre>${escapeHtml(JSON.stringify(order.aiDiagnostics, null, 2))}</pre>`
+            : '<div class="empty-state">Диагностика пока не записана.</div>';
+
+          els.detail.innerHTML = `
+            <section class="detail-block">
+              <h3>Действия</h3>
+              <div class="inline-actions">
+                <button class="secondary-button" type="button" id="retryOrderButton">Переочередить заказ</button>
+                <button class="secondary-button" type="button" id="downloadBookButton">Скачать txt</button>
+                <button class="secondary-button" type="button" id="copyBookButton">Копировать текст</button>
               </div>
-            </div>
-          `)
-          .join('');
+            </section>
 
-        detailEl.innerHTML = `
-          <div class="review-stats">
-            <div class="summary-chip">${order.orderId}</div>
-            <div class="summary-chip">${order.mode || 'local'}</div>
-            <div class="summary-chip">Фото: ${(order.photos || []).length}</div>
-          </div>
-          <div class="detail-block">
-            <strong>Статусы</strong>
-            <pre>${(order.statuses || []).map((item) => `${item.at} · ${item.status} · ${item.note}`).join('\n')}</pre>
-          </div>
-          <div class="detail-block">
-            <strong>Первые ответы</strong>
-            <ol>${answers || '<li>Нет ответов</li>'}</ol>
-          </div>
-          <div class="detail-block">
-            <strong>Фото</strong>
-            <div class="photo-links">${photos || 'Нет фото'}</div>
-          </div>
-          <div class="detail-block">
-            <strong>Сгенерированная книга</strong>
-            <pre>${escapeHtml(order.generatedBook || 'Книга еще не готова.')}</pre>
-          </div>
-          <div class="detail-block">
-            <strong>Перегенерация отдельных моментов</strong>
-            <div class="chapter-list">${chapterCards || 'Главы пока недоступны. Сначала нужна хотя бы одна успешная генерация книги.'}</div>
-          </div>
-        `;
+            <section class="detail-block">
+              <h3>Статусы</h3>
+              <pre>${escapeHtml((order.statuses || []).map((item) => `${item.at} · ${item.status} · ${item.note}`).join('\n') || 'Нет статусов')}</pre>
+            </section>
 
-        detailEl.querySelectorAll('.regenerate-chapter-button').forEach((button) => {
+            <section class="detail-block">
+              <h3>Качество анкеты</h3>
+              <div class="stats">
+                <span class="summary-chip">Ответов: ${answered.length}</span>
+                <span class="summary-chip">Фото: ${(order.photos || []).length}</span>
+                <span class="summary-chip">Режим: ${order.mode || 'unknown'}</span>
+              </div>
+            </section>
+
+            <section class="detail-block">
+              <h3>Первые ответы</h3>
+              <pre>${escapeHtml(answered.slice(0, 30).map((q) => `${q.number}. ${q.text}\n${q.answer}`).join('\n\n') || 'Нет ответов')}</pre>
+            </section>
+
+            <section class="detail-block">
+              <h3>Фото</h3>
+              <div>${photos || 'Нет фото'}</div>
+            </section>
+
+            <section class="detail-block">
+              <h3>Сгенерированная книга</h3>
+              <pre id="generatedBookText">${escapeHtml(order.generatedBook || 'Книга еще не готова.')}</pre>
+            </section>
+
+            <section class="detail-block">
+              <h3>AI диагностика</h3>
+              ${aiDiag}
+            </section>
+
+            <section class="detail-block">
+              <h3>Главы</h3>
+              <div class="chapter-list">${chapterCards || '<div class="empty-state">Главы пока не собраны.</div>'}</div>
+            </section>
+          `;
+
+          bindDetailActions(order);
+        } catch (error) {
+          els.detail.innerHTML = `<div class="empty-state">Ошибка: ${escapeHtml(error.message || 'Не удалось загрузить заказ')}</div>`;
+        }
+      }
+
+      function bindDetailActions(order) {
+        const retryButton = document.getElementById('retryOrderButton');
+        const downloadButton = document.getElementById('downloadBookButton');
+        const copyButton = document.getElementById('copyBookButton');
+
+        if (retryButton) {
+          retryButton.addEventListener('click', async () => {
+            retryButton.disabled = true;
+            retryButton.textContent = 'Отправка...';
+            try {
+              const response = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}/retry`, { method: 'POST' });
+              const data = await response.json();
+              if (!response.ok) throw new Error(data.error || 'Не удалось переочередить');
+              await loadOrders();
+            } catch (error) {
+              alert(error.message || 'Ошибка');
+            } finally {
+              retryButton.disabled = false;
+              retryButton.textContent = 'Переочередить заказ';
+            }
+          });
+        }
+
+        if (downloadButton) {
+          downloadButton.addEventListener('click', () => {
+            const text = String(order.generatedBook || '').trim();
+            if (!text) {
+              alert('Книга еще не сгенерирована.');
+              return;
+            }
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${order.orderId || 'book'}.txt`;
+            link.click();
+            URL.revokeObjectURL(url);
+          });
+        }
+
+        if (copyButton) {
+          copyButton.addEventListener('click', async () => {
+            const text = String(order.generatedBook || '').trim();
+            if (!text) {
+              alert('Книга еще не сгенерирована.');
+              return;
+            }
+            await navigator.clipboard.writeText(text);
+            copyButton.textContent = 'Скопировано';
+            setTimeout(() => { copyButton.textContent = 'Копировать текст'; }, 1200);
+          });
+        }
+
+        document.querySelectorAll('.regenerate-button').forEach((button) => {
           button.addEventListener('click', async () => {
             const chapterIndex = Number(button.dataset.index);
             const textarea = document.getElementById(`chapterInstruction-${chapterIndex}`);
-            const instruction = textarea ? textarea.value.trim() : '';
+            const instruction = String(textarea?.value || '').trim();
+
             button.disabled = true;
             button.textContent = 'Перегенерация...';
+
             try {
               const response = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}/regenerate-chapter`, {
                 method: 'POST',
@@ -171,18 +388,17 @@
                 body: JSON.stringify({ chapterIndex, instruction })
               });
               const data = await response.json();
-              if (!response.ok) throw new Error(data.error || 'Не удалось перегенерировать главу');
+              if (!response.ok) throw new Error(data.error || 'Ошибка перегенерации');
               await loadOrder(order.orderId);
+              await loadOrders({ silent: true });
             } catch (error) {
-              alert(error.message || 'Ошибка при перегенерации главы');
+              alert(error.message || 'Ошибка');
             } finally {
               button.disabled = false;
-              button.textContent = 'Перегенерировать эту главу';
+              button.textContent = 'Перегенерировать главу';
             }
           });
         });
-
-        loadOrders();
       }
 
       function countWords(value) {
@@ -194,7 +410,7 @@
       }
 
       function escapeHtml(value) {
-        return String(value)
+        return String(value || '')
           .replaceAll('&', '&amp;')
           .replaceAll('<', '&lt;')
           .replaceAll('>', '&gt;');

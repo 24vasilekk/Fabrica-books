@@ -25,6 +25,8 @@ const OPENROUTER_OUTLINE_MAX_TOKENS = Number(process.env.OPENROUTER_OUTLINE_MAX_
 const OPENROUTER_CHAPTER_MAX_TOKENS = Number(process.env.OPENROUTER_CHAPTER_MAX_TOKENS || 5000);
 const OPENROUTER_EXPAND_MAX_TOKENS = Number(process.env.OPENROUTER_EXPAND_MAX_TOKENS || 6500);
 const OPENROUTER_EDIT_MAX_TOKENS = Number(process.env.OPENROUTER_EDIT_MAX_TOKENS || 12000);
+const OPENROUTER_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS || 70000);
+const OPENROUTER_MAX_RETRIES = Number(process.env.OPENROUTER_MAX_RETRIES || 3);
 const SEND_TO_TELEGRAM = process.env.SEND_TO_TELEGRAM === 'true';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_MANAGER_CHAT_ID = process.env.TELEGRAM_MANAGER_CHAT_ID || '';
@@ -224,6 +226,7 @@ async function saveOrder(order) {
     generatedBook: '',
     generatedOutline: null,
     generatedChapters: [],
+    aiDiagnostics: null,
     mode: OPENROUTER_API_KEY ? 'pending-live' : 'pending-mock',
     aiProvider: OPENROUTER_API_KEY ? 'openrouter' : 'mock',
     statuses: [
@@ -300,6 +303,7 @@ async function processSingleOrder(orderId) {
       generatedBook: generationResult.generatedBook,
       generatedOutline: generationResult.outline || null,
       generatedChapters: generationResult.chapters || [],
+      aiDiagnostics: generationResult.aiDiagnostics || null,
       generatedBookPath,
       mode: generationResult.mode
     });
@@ -450,36 +454,72 @@ async function generateBook(order) {
   }
 
   const sourceQuestions = (order.questionnaire.questions || []).filter((item) => String(item.answer || '').trim());
-  const outline = await callModel(
-    buildOutlinePrompt({ ...order, questionnaire: { questions: sourceQuestions } }),
-    { stage: 'outline', json: true }
+  const questionnaireContext = enrichQuestionnaireContext(sourceQuestions);
+  const timings = {};
+
+  const outlineStart = Date.now();
+  const outline = normalizeOutline(
+    await callModel(
+      buildOutlinePrompt({
+        ...order,
+        questionnaire: { questions: questionnaireContext.questions },
+        questionnaireContext
+      }),
+      { stage: 'outline', json: true }
+    )
   );
+  timings.outlineMs = Date.now() - outlineStart;
+
   const chapters = [];
-  for (const chapter of (outline.chapters || []).slice(0, getChapterLimit(order))) {
-    const relatedQuestions = pickRelevantQuestions(sourceQuestions, chapter);
+  for (const chapter of (outline.chapters || []).slice(0, getChapterLimit(order, outline))) {
+    const relatedQuestions = pickRelevantQuestions(questionnaireContext.questions, chapter);
+    const chapterStart = Date.now();
     const text = await generateChapterText(
-      { ...order, questionnaire: { questions: relatedQuestions } },
+      {
+        ...order,
+        questionnaire: { questions: relatedQuestions },
+        questionnaireContext: {
+          ...questionnaireContext,
+          questions: relatedQuestions
+        }
+      },
       outline,
       chapter,
       chapters
     );
+    timings[`chapter_${chapters.length + 1}_ms`] = Date.now() - chapterStart;
     chapters.push({ title: chapter.title, text });
   }
-  const mergedBook = await callModel(buildMergePrompt(order, outline, chapters), { stage: 'merge' });
-  const editedBook = await callModel(buildEditPrompt(order, mergedBook), { stage: 'editor' });
+  const mergeStart = Date.now();
+  const mergedBook = await callModel(buildMergePrompt({ ...order, questionnaireContext }, outline, chapters), { stage: 'merge' });
+  timings.mergeMs = Date.now() - mergeStart;
+
+  const editStart = Date.now();
+  const editedBook = await callModel(buildEditPrompt({ ...order, questionnaireContext }, mergedBook), { stage: 'editor' });
+  timings.editMs = Date.now() - editStart;
+
   const generatedBook = shouldKeepMergedBook(mergedBook, editedBook) ? mergedBook : editedBook;
+  const cleanedBook = sanitizeGeneratedText(generatedBook);
 
   return {
     mode: 'live',
     generationStatus: 'Книга сгенерирована, расширена по главам и прогнана через AI-редактор.',
-    generatedBook,
+    generatedBook: cleanedBook,
     outline,
-    chapters
+    chapters,
+    aiDiagnostics: {
+      answeredQuestions: questionnaireContext.stats.answered,
+      avgAnswerWords: questionnaireContext.stats.avgWords,
+      chapterCount: chapters.length,
+      timings
+    }
   };
 }
 
-function getChapterLimit(order) {
-  return order.bookType?.id === 'child' ? 12 : 12;
+function getChapterLimit(order, outline) {
+  const outlineCount = Array.isArray(outline?.chapters) ? outline.chapters.length : 12;
+  if (order.bookType?.id === 'child') return Math.min(Math.max(outlineCount, 8), 12);
+  return Math.min(Math.max(outlineCount, 10), 14);
 }
 
 function shouldExpandChapter(order, text) {
@@ -504,13 +544,63 @@ function countWords(text) {
 }
 
 function pickRelevantQuestions(questions, chapter) {
-  const hints = (chapter.factsToUse || []).join(' ').toLowerCase();
-  const matched = questions.filter((item) => {
-    const hay = `${item.text} ${item.answer}`.toLowerCase();
-    return hints.split(/\s+/).filter(Boolean).some((part) => hay.includes(part));
+  const hints = String((chapter.factsToUse || []).join(' '))
+    .toLowerCase()
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 2);
+
+  const scored = questions.map((item) => {
+    const hay = `${item.text || ''} ${item.answer || ''}`.toLowerCase();
+    let score = Math.min(countWords(item.answer || ''), 120) / 12;
+    for (const hint of hints) {
+      if (hay.includes(hint)) score += 2.5;
+    }
+    if (String(item.chapter || '').toLowerCase() === String(chapter.title || '').toLowerCase()) score += 1;
+    return { item, score };
   });
-  const limit = questions.length <= 30 ? 30 : 18;
-  return matched.length ? matched.slice(0, limit) : questions.slice(0, limit);
+
+  scored.sort((a, b) => b.score - a.score);
+  const limit = questions.length <= 30 ? 30 : 24;
+  return scored.slice(0, limit).map((entry) => entry.item);
+}
+
+function enrichQuestionnaireContext(answeredQuestions) {
+  const questions = answeredQuestions.map((item) => ({
+    ...item,
+    answer: sanitizeUserText(item.answer || ''),
+    chapter: item.chapter || item.chapterTitle || 'Без главы'
+  }));
+  const grouped = {};
+  for (const item of questions) {
+    if (!grouped[item.chapter]) grouped[item.chapter] = [];
+    grouped[item.chapter].push(item);
+  }
+  const totalWords = questions.reduce((acc, item) => acc + countWords(item.answer || ''), 0);
+  return {
+    questions,
+    groupedByChapter: grouped,
+    stats: {
+      answered: questions.length,
+      totalWords,
+      avgWords: questions.length ? Math.round(totalWords / questions.length) : 0
+    }
+  };
+}
+
+function sanitizeUserText(value) {
+  return String(value || '')
+    .replace(/[^\S\r\n]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function sanitizeGeneratedText(value) {
+  return String(value || '')
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, ''))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim();
 }
 
 function buildMockBook(order) {
@@ -570,14 +660,22 @@ async function regenerateChapter(orderId, chapterIndex, instruction) {
   });
 
   const sourceQuestions = (order.questionnaire?.questions || []).filter((item) => String(item.answer || '').trim());
-  const relatedQuestions = pickRelevantQuestions(sourceQuestions, targetChapter);
+  const questionnaireContext = enrichQuestionnaireContext(sourceQuestions);
+  const relatedQuestions = pickRelevantQuestions(questionnaireContext.questions, targetChapter);
   const previousChapters = chapters
     .map((item, index) => ({ ...item, index }))
     .filter((item) => item.index !== chapterIndex)
     .map((item) => ({ title: item.title, text: item.text }));
 
   const regeneratedText = await generateChapterText(
-    { ...order, questionnaire: { questions: relatedQuestions } },
+    {
+      ...order,
+      questionnaire: { questions: relatedQuestions },
+      questionnaireContext: {
+        ...questionnaireContext,
+        questions: relatedQuestions
+      }
+    },
     outline,
     targetChapter,
     previousChapters,
@@ -590,9 +688,9 @@ async function regenerateChapter(orderId, chapterIndex, instruction) {
   }));
 
   const chaptersForMerge = nextChapters.filter((item) => String(item.text || '').trim());
-  const mergedBook = await callModel(buildMergePrompt(order, outline, chaptersForMerge), { stage: 'merge' });
-  const editedBook = await callModel(buildEditPrompt(order, mergedBook), { stage: 'editor' });
-  const generatedBook = shouldKeepMergedBook(mergedBook, editedBook) ? mergedBook : editedBook;
+  const mergedBook = await callModel(buildMergePrompt({ ...order, questionnaireContext }, outline, chaptersForMerge), { stage: 'merge' });
+  const editedBook = await callModel(buildEditPrompt({ ...order, questionnaireContext }, mergedBook), { stage: 'editor' });
+  const generatedBook = sanitizeGeneratedText(shouldKeepMergedBook(mergedBook, editedBook) ? mergedBook : editedBook);
   const generatedBookPath = persistGeneratedBook(orderId, generatedBook);
 
   return updateStoredOrder(orderId, {
@@ -621,28 +719,69 @@ async function callModel(prompt, options = {}) {
   }
   messages.push({ role: 'user', content: prompt });
 
-  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      'HTTP-Referer': PUBLIC_BASE_URL,
-      'X-Title': 'Fabrika Vospominaniy Books'
-    },
-    body: JSON.stringify({
-      model: pickModelForStage(options.stage),
-      messages,
-      temperature: pickTemperature(options),
-      max_tokens: pickMaxTokensForStage(options.stage),
-      provider: {
-        sort: 'throughput'
-      }
-    })
-  });
-  if (!response.ok) throw new Error(`OpenRouter API error ${response.status}`);
-  const result = await response.json();
+  const requestBody = {
+    model: pickModelForStage(options.stage),
+    messages,
+    temperature: pickTemperature(options),
+    max_tokens: pickMaxTokensForStage(options.stage),
+    provider: {
+      sort: 'throughput'
+    }
+  };
+  if (options.json) {
+    requestBody.response_format = { type: 'json_object' };
+  }
+
+  const result = await callOpenRouterWithRetry(requestBody);
   const text = extractResponseText(result);
   return options.json ? parseOutlineJson(text) : text;
+}
+
+async function callOpenRouterWithRetry(body, attempt = 1) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENROUTER_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': PUBLIC_BASE_URL,
+        'X-Title': 'Fabrika Vospominaniy Books'
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const retryable = response.status >= 500 || response.status === 429;
+      if (retryable && attempt < OPENROUTER_MAX_RETRIES) {
+        await delay(attempt * 900);
+        return callOpenRouterWithRetry(body, attempt + 1);
+      }
+      throw new Error(`OpenRouter API error ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (message.includes('OpenRouter API error 4') && !message.includes('429')) {
+      throw error;
+    }
+    const canRetry = attempt < OPENROUTER_MAX_RETRIES;
+    if (canRetry) {
+      await delay(attempt * 900);
+      return callOpenRouterWithRetry(body, attempt + 1);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function pickModelForStage(stage) {
@@ -696,6 +835,30 @@ function parseOutlineJson(text) {
   }
 
   return buildFallbackOutline();
+}
+
+function normalizeOutline(outline) {
+  const fallback = buildFallbackOutline();
+  const source = outline && typeof outline === 'object' ? outline : fallback;
+  const rawChapters = Array.isArray(source.chapters) ? source.chapters : fallback.chapters;
+  const normalizedChapters = rawChapters
+    .map((chapter, index) => {
+      const title = String(chapter?.title || '').trim() || `Глава ${index + 1}`;
+      const summary = String(chapter?.summary || '').trim() || 'Ключевой эпизод этой истории.';
+      const factsToUse = Array.isArray(chapter?.factsToUse)
+        ? chapter.factsToUse.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      return { title, summary, factsToUse };
+    })
+    .filter((chapter) => chapter.title)
+    .slice(0, 14);
+
+  return {
+    title: String(source.title || fallback.title).trim() || fallback.title,
+    subtitle: String(source.subtitle || fallback.subtitle).trim() || fallback.subtitle,
+    finalMessageIdea: String(source.finalMessageIdea || fallback.finalMessageIdea).trim() || fallback.finalMessageIdea,
+    chapters: normalizedChapters.length ? normalizedChapters : fallback.chapters
+  };
 }
 
 function buildFallbackOutline() {

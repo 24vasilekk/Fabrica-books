@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'fabrika-books-webapp-state';
 const MAX_PHOTOS = 50;
+const MIN_RECOMMENDED_ANSWERED = 30;
 const VALID_MANAGER_CODES = ['BOOKS-2026', 'FABRIKA-BOOKS', 'MEMORY-ACCESS'];
 let orderPollingTimer = null;
 let questionSetsLoaded = typeof window.BOOK_QUESTION_SETS !== 'undefined';
@@ -77,6 +78,29 @@ const booksPreview = [
     rating: 4.7,
     coverText: 'МД'
   }
+];
+
+const favoriteBooks = [
+  {
+    id: 'fav-1',
+    title: 'Письма домой',
+    review: 'Сохранено в избранное.',
+    rating: 4.9,
+    coverText: 'ПД'
+  },
+  {
+    id: 'fav-2',
+    title: 'Наши выходные',
+    review: 'Часто открываете этот шаблон.',
+    rating: 4.6,
+    coverText: 'НВ'
+  }
+];
+
+const profileItems = [
+  { title: 'Заказы', value: '3 активных' },
+  { title: 'Черновики', value: '1 сохранен' },
+  { title: 'Контакт', value: '@username' }
 ];
 
 const chapters = [
@@ -239,7 +263,11 @@ let questions = getActiveQuestions();
 
 const els = {
   screens: document.querySelectorAll('.screen'),
+  appSections: document.querySelectorAll('.app-section'),
+  appSectionButtons: document.querySelectorAll('[data-app-section]'),
   bookList: document.getElementById('bookList'),
+  favoritesList: document.getElementById('favoritesList'),
+  profileList: document.getElementById('profileList'),
   bookTypeOptions: document.getElementById('bookTypeOptions'),
   customBookType: document.getElementById('customBookType'),
   confirmBookType: document.getElementById('confirmBookType'),
@@ -295,10 +323,13 @@ function init() {
   }
   refreshQuestions();
   renderBookList();
+  renderFavoritesList();
+  renderProfileList();
   renderBookTypes();
   bindStaticEvents();
   initTouchFeedback();
   restoreInputs();
+  setActiveAppSection('section-home');
   showScreen(appState.activeScreen || 'screen-hero', { scroll: false });
 }
 
@@ -320,6 +351,57 @@ function renderBookList() {
       <span class="book-rating" aria-label="Рейтинг">★ ${book.rating.toFixed(1)}</span>
     `;
     els.bookList.appendChild(item);
+  });
+}
+
+function renderFavoritesList() {
+  if (!els.favoritesList) return;
+  els.favoritesList.innerHTML = '';
+
+  favoriteBooks.forEach((book) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'book-list-item';
+    item.innerHTML = `
+      <span class="book-cover" aria-hidden="true">${book.coverText}</span>
+      <span class="book-copy">
+        <strong>${book.title}</strong>
+        <small>${book.review}</small>
+      </span>
+      <span class="book-rating">★ ${book.rating.toFixed(1)}</span>
+    `;
+    els.favoritesList.appendChild(item);
+  });
+}
+
+function renderProfileList() {
+  if (!els.profileList) return;
+  els.profileList.innerHTML = '';
+
+  profileItems.forEach((itemData) => {
+    const item = document.createElement('article');
+    item.className = 'book-list-item profile-item';
+    item.innerHTML = `
+      <span class="book-cover" aria-hidden="true">•</span>
+      <span class="book-copy">
+        <strong>${itemData.title}</strong>
+        <small>${itemData.value}</small>
+      </span>
+      <span class="book-rating">›</span>
+    `;
+    els.profileList.appendChild(item);
+  });
+}
+
+function setActiveAppSection(sectionId) {
+  if (!els.appSections.length) return;
+
+  els.appSections.forEach((section) => {
+    section.classList.toggle('is-active', section.id === sectionId);
+  });
+
+  els.appSectionButtons.forEach((button) => {
+    button.classList.toggle('is-active', button.dataset.appSection === sectionId);
   });
 }
 
@@ -498,6 +580,12 @@ function bindStaticEvents() {
   els.submitProjectButton.addEventListener('click', submitProject);
   els.retryGenerationButton.addEventListener('click', retryGeneration);
   els.restartFlowButton.addEventListener('click', resetFlow);
+
+  els.appSectionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      setActiveAppSection(button.dataset.appSection);
+    });
+  });
 }
 
 function restoreInputs() {
@@ -702,7 +790,7 @@ function renderQuestion() {
   els.questionText.textContent = question.text;
   els.questionHint.textContent = question.chapterHint;
   els.prevQuestionButton.disabled = appState.currentQuestionIndex === 0;
-  els.nextQuestionButton.textContent = current === total ? 'К обзору' : 'Дальше';
+  els.nextQuestionButton.textContent = current === total ? 'Открыть' : 'Далее';
   els.questionField.innerHTML = '';
 
   const field = buildField(question, answer);
@@ -918,6 +1006,17 @@ async function submitProject() {
     alert('Укажите имя и контакт.');
     showScreen('screen-payment');
     return;
+  }
+
+  const answeredCount = questions.filter((question) => isAnswerFilled(appState.answers[question.id])).length;
+  if (answeredCount < MIN_RECOMMENDED_ANSWERED) {
+    const shouldContinue = window.confirm(
+      `Сейчас заполнено только ${answeredCount} ответов из ${questions.length}. Книга может получиться слишком общей. Отправить все равно?`
+    );
+    if (!shouldContinue) {
+      showScreen('screen-review');
+      return;
+    }
   }
 
   if (!appState.orderId) {
