@@ -263,6 +263,7 @@ let questions = getActiveQuestions();
 
 const els = {
   screens: document.querySelectorAll('.screen'),
+  homeQuickButton: document.getElementById('homeQuickButton'),
   appSections: document.querySelectorAll('.app-section'),
   appSectionButtons: document.querySelectorAll('[data-app-section]'),
   bookList: document.getElementById('bookList'),
@@ -522,6 +523,13 @@ function cloneDefaultState() {
 }
 
 function bindStaticEvents() {
+  if (els.homeQuickButton) {
+    els.homeQuickButton.addEventListener('click', () => {
+      setActiveAppSection('section-home');
+      showScreen('screen-hero');
+    });
+  }
+
   document.querySelectorAll('[data-go-screen]').forEach((button) => {
     button.addEventListener('click', () => {
       const target = button.dataset.goScreen;
