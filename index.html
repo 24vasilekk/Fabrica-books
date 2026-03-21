@@ -18,65 +18,59 @@
       <button class="home-quick-button" type="button" id="homeQuickButton" aria-label="На главную">←</button>
       <main class="screen-stack">
         <section class="screen is-active" id="screen-hero">
-          <div class="home-header glass-card">
-            <div>
-              <p class="eyebrow">Mini App</p>
-              <h2>Фабрика воспоминаний</h2>
+          <div class="logo-strip">
+            <div class="logo-mark">ФВ</div>
+            <div class="logo-copy">
+              <p class="eyebrow">Telegram WebApp</p>
+              <strong>Фабрика воспоминаний books</strong>
             </div>
-            <button class="secondary-button" type="button" data-go-screen="screen-book-type">Создать</button>
           </div>
 
           <div class="app-sections">
             <section class="app-section is-active" id="section-home">
-              <div class="story-block">
-                <div class="section-heading">
-                  <p class="eyebrow">Home</p>
-                  <h3>Продолжить</h3>
+              <div class="hero-home story-block">
+                <p class="eyebrow">Персональная книга на основе вашей истории</p>
+                <h2>Книга, в которой живут ваши чувства</h2>
+                <p class="lead">
+                  Фабрика воспоминаний books превращает вашу историю в книгу для печати: вы выбираете формат, отвечаете на вопросы, добавляете фотографии, а дальше команда собирает текст и макет.
+                </p>
+                <div class="hero-actions">
+                  <button class="primary-button" type="button" data-go-screen="screen-book-type">Создать книгу</button>
+                  <button class="secondary-button" type="button" data-go-screen="screen-review">Как это работает</button>
                 </div>
-                <div class="action-row">
-                  <button class="primary-button" type="button" data-go-screen="screen-book-type">Создать</button>
-                  <button class="secondary-button" type="button" data-go-screen="screen-review">Открыть</button>
-                  <button class="secondary-button" type="button" data-go-screen="screen-photos">Фото</button>
+                <div class="feature-grid">
+                  <article>
+                    <span>01</span>
+                    <h3>100 вопросов</h3>
+                    <p>Анкета разбита на главы и сохраняется автоматически.</p>
+                  </article>
+                  <article>
+                    <span>02</span>
+                    <h3>До 50 фото</h3>
+                    <p>Фотографии загружаются после анкеты и собираются в один заказ.</p>
+                  </article>
                 </div>
-              </div>
-            </section>
-
-            <section class="app-section" id="section-books">
-              <div class="story-block">
-                <div class="section-heading">
-                  <p class="eyebrow">Books</p>
-                  <h3>Библиотека</h3>
-                </div>
-                <div class="book-list" id="bookList"></div>
-              </div>
-            </section>
-
-            <section class="app-section" id="section-favorites">
-              <div class="story-block">
-                <div class="section-heading">
-                  <p class="eyebrow">Favorites</p>
-                  <h3>Избранное</h3>
-                </div>
-                <div class="book-list" id="favoritesList"></div>
               </div>
             </section>
 
             <section class="app-section" id="section-profile">
               <div class="story-block">
                 <div class="section-heading">
-                  <p class="eyebrow">Profile</p>
-                  <h3>Профиль</h3>
+                  <p class="eyebrow">Личный кабинет</p>
+                  <h3>Ваши данные</h3>
                 </div>
                 <div class="book-list" id="profileList"></div>
+                <div class="action-row">
+                  <button class="primary-button" type="button" data-go-screen="screen-review">Открыть ответы</button>
+                  <button class="secondary-button" type="button" data-go-screen="screen-photos">Открыть фото</button>
+                </div>
               </div>
             </section>
           </div>
 
           <nav class="bottom-nav glass-card" aria-label="Навигация">
-            <button class="bottom-nav-item is-active" type="button" data-app-section="section-home">Home</button>
-            <button class="bottom-nav-item" type="button" data-app-section="section-books">Books</button>
-            <button class="bottom-nav-item" type="button" data-app-section="section-favorites">Favorites</button>
-            <button class="bottom-nav-item" type="button" data-app-section="section-profile">Profile</button>
+            <button class="bottom-nav-item is-active" type="button" data-app-section="section-home">Дом</button>
+            <button class="bottom-nav-item" type="button" data-app-section="section-profile">Личный кабинет</button>
           </nav>
         </section>
 

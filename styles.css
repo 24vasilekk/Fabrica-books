@@ -120,37 +120,47 @@ label, input, textarea, button {
   justify-content: flex-start;
 }
 
-.home-header {
+.logo-strip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: linear-gradient(90deg, #222124, #272529);
-  color: #f2ece6;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 26px rgba(21, 18, 18, 0.25);
+  gap: 12px;
+  padding: 8px 6px 4px;
 }
 
-.home-header h2,
-.home-header .eyebrow {
-  color: #f7f0ea;
+.logo-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(216, 93, 79, 0.12);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-grid;
+  place-items: center;
 }
 
-.home-header h2 {
-  font-size: clamp(22px, 5.4vw, 34px);
-  line-height: 1.05;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.24);
+.logo-copy {
+  display: grid;
+  gap: 1px;
 }
 
-.home-header .eyebrow {
-  color: #df6657;
-  opacity: 1;
+.logo-copy .eyebrow {
+  margin: 0;
 }
 
-.home-header .secondary-button {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff7f1;
-  border-color: rgba(255, 255, 255, 0.26);
+.logo-copy strong {
+  font-size: 18px;
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.hero-home {
+  text-align: center;
+}
+
+.hero-home .lead {
+  max-width: 720px;
+  margin: 12px auto 0;
 }
 
 .app-sections {
@@ -172,7 +182,7 @@ label, input, textarea, button {
   position: sticky;
   bottom: calc(6px + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding: 6px;
   margin-top: auto;
@@ -229,11 +239,6 @@ label, input, textarea, button {
   box-shadow: var(--shadow-card);
 }
 
-.home-header.glass-card {
-  background: linear-gradient(90deg, #222124, #272529);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 26px rgba(21, 18, 18, 0.25);
-}
 
 .hero-card,
 .step-card,
