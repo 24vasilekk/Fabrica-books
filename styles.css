@@ -13,25 +13,24 @@
   --tg-subtitle-text-color: GrayText;
   --tg-destructive-text-color: Mark;
 
-  --app-bg: var(--tg-bg-color);
-  --surface: var(--tg-section-bg-color);
-  --surface-alt: var(--tg-secondary-bg-color);
-  --line: color-mix(in srgb, var(--tg-text-color) 10%, transparent);
-  --line-strong: color-mix(in srgb, var(--tg-text-color) 16%, transparent);
-  --text: var(--tg-text-color);
-  --text-soft: var(--tg-subtitle-text-color);
-  --text-dim: var(--tg-hint-color);
-  --accent: var(--tg-button-color);
-  --accent-text: var(--tg-button-text-color);
+  --app-bg: #f3efea;
+  --surface: #fffdfb;
+  --surface-alt: #f7f3ef;
+  --line: rgba(31, 26, 24, 0.1);
+  --line-strong: rgba(31, 26, 24, 0.16);
+  --text: #1f1a18;
+  --text-soft: rgba(31, 26, 24, 0.72);
+  --text-dim: rgba(31, 26, 24, 0.52);
+  --accent: #d85d4f;
+  --accent-text: #fffaf7;
 
-  --radius-xl: 16px;
-  --radius-lg: 14px;
+  --radius-xl: 24px;
+  --radius-lg: 18px;
   --radius-md: 10px;
   --radius-sm: 10px;
-  --shadow-card:
-    0 1px 1px color-mix(in srgb, var(--tg-text-color) 4%, transparent),
-    0 8px 18px color-mix(in srgb, var(--tg-text-color) 7%, transparent);
-  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --shadow-card: 0 10px 24px rgba(45, 34, 30, 0.08);
+  --font-ui: "Manrope", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
 }
 
 * {
@@ -47,7 +46,9 @@ body {
   min-height: 100vh;
   font-family: var(--font-ui);
   color: var(--text);
-  background: var(--app-bg);
+  background:
+    radial-gradient(circle at 20% 14%, rgba(236, 171, 158, 0.12) 0, transparent 34%),
+    linear-gradient(180deg, #f7f3ef 0%, #f2ede8 100%);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -81,16 +82,18 @@ img {
 .question-body h2,
 .finish-card h2 {
   margin: 0;
-  letter-spacing: -0.01em;
-  line-height: 1.22;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  font-family: var(--font-display);
+  font-weight: 600;
 }
 
 .eyebrow {
   margin: 0 0 6px;
-  color: var(--tg-section-header-text-color);
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
@@ -115,6 +118,29 @@ img {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  background: linear-gradient(90deg, #222124, #272529);
+  color: #f2ece6;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 26px rgba(21, 18, 18, 0.25);
+}
+
+.home-header h2,
+.home-header .eyebrow {
+  color: #f7f0ea;
+}
+
+.home-header h2 {
+  font-size: clamp(28px, 7vw, 44px);
+}
+
+.home-header .eyebrow {
+  opacity: 0.78;
+}
+
+.home-header .secondary-button {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff7f1;
+  border-color: rgba(255, 255, 255, 0.26);
 }
 
 .app-sections {
@@ -138,9 +164,12 @@ img {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
-  padding: 4px;
+  padding: 6px;
   margin-top: auto;
   z-index: 3;
+  background: #232326;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 26px rgba(21, 18, 18, 0.22);
 }
 
 .bottom-nav-item {
@@ -148,21 +177,21 @@ img {
   padding: 8px 6px;
   border-radius: 10px;
   background: transparent;
-  color: var(--text-soft);
+  color: rgba(245, 238, 232, 0.7);
   font-size: 12px;
   font-weight: 600;
 }
 
 .bottom-nav-item.is-active {
-  background: var(--surface-alt);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff8f2;
 }
 
 .glass-card,
 .story-block {
   border-radius: var(--radius-xl);
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: linear-gradient(180deg, rgba(255, 253, 251, 0.94), rgba(253, 249, 245, 0.88));
   box-shadow: var(--shadow-card);
 }
 
@@ -315,7 +344,8 @@ img {
   margin-top: 10px;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(31, 26, 24, 0.08);
 }
 
 .book-list-item {
@@ -339,7 +369,7 @@ img {
 
 .book-list-item:active,
 .book-list-item.is-pressed {
-  background: color-mix(in srgb, var(--tg-secondary-bg-color) 72%, transparent);
+  background: rgba(255, 255, 255, 0.88);
   transform: scale(0.997);
 }
 
@@ -394,11 +424,11 @@ img {
 
 .section-heading h2,
 .finish-card h2 {
-  font-size: clamp(22px, 6vw, 30px);
+  font-size: clamp(28px, 7vw, 46px);
 }
 
 .section-heading h3 {
-  font-size: clamp(18px, 5vw, 24px);
+  font-size: clamp(24px, 6vw, 34px);
 }
 
 .primary-button,
@@ -417,22 +447,22 @@ img {
 }
 
 .primary-button {
-  background: var(--accent);
-  color: var(--accent-text);
-  border: 1px solid color-mix(in srgb, var(--accent) 82%, var(--line));
+  background: #fffdfb;
+  color: var(--text);
+  border: 1px solid rgba(31, 26, 24, 0.1);
 }
 
 .secondary-button {
-  background: var(--surface-alt);
+  background: rgba(255, 255, 255, 0.72);
   color: var(--text);
-  border: 1px solid color-mix(in srgb, var(--tg-text-color) 14%, transparent);
+  border: 1px solid rgba(31, 26, 24, 0.09);
 }
 
 .ghost-button,
 .icon-button {
-  background: var(--surface-alt);
+  background: rgba(255, 255, 255, 0.62);
   color: var(--text);
-  border: 1px solid color-mix(in srgb, var(--tg-text-color) 14%, transparent);
+  border: 1px solid rgba(31, 26, 24, 0.09);
 }
 
 .icon-button {
@@ -457,7 +487,7 @@ img {
 .checkbox-item:active,
 .choice-item.is-pressed,
 .checkbox-item.is-pressed {
-  background: color-mix(in srgb, var(--tg-secondary-bg-color) 72%, var(--surface));
+  background: rgba(255, 255, 255, 0.84);
   transform: scale(0.995);
 }
 
@@ -525,7 +555,7 @@ img {
   padding: 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--line-strong);
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.84);
   color: var(--text);
   outline: none;
 }
@@ -557,7 +587,7 @@ img {
   min-height: 30px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: var(--surface-alt);
+  background: rgba(255, 255, 255, 0.78);
   border: 1px solid var(--line);
   color: var(--text-soft);
   font-size: 12px;
