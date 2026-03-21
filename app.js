@@ -2,47 +2,80 @@ const STORAGE_KEY = 'fabrika-books-webapp-state';
 const MAX_PHOTOS = 50;
 const VALID_MANAGER_CODES = ['BOOKS-2026', 'FABRIKA-BOOKS', 'MEMORY-ACCESS'];
 let orderPollingTimer = null;
+let questionSetsLoaded = typeof window.BOOK_QUESTION_SETS !== 'undefined';
+let questionSetsLoadingPromise = null;
 
 const bookTypes = [
   {
     id: 'love',
     title: 'Для любимого человека',
-    description: 'История любви, важных дат, слов и воспоминаний, к которым хочется возвращаться.'
+    description: 'Личная история для партнера.'
   },
   {
     id: 'mom',
     title: 'Для мамы',
-    description: 'Теплая книга благодарности, семейных деталей и самых дорогих моментов.'
+    description: 'Семейные моменты и важные слова.'
   },
   {
     id: 'dad',
     title: 'Для папы',
-    description: 'Книга про силу, поддержку, характер и личные семейные воспоминания.'
+    description: 'История про поддержку и семью.'
   },
   {
     id: 'grandma',
     title: 'Для бабушки',
-    description: 'Теплая книга о семейной памяти, заботе, мудрости и родных традициях.'
+    description: 'Память о семье и традициях.'
   },
   {
     id: 'grandpa',
     title: 'Для дедушки',
-    description: 'История про опору, наставничество, семейные корни и важные моменты рядом.'
+    description: 'История о семье и корнях.'
   },
   {
     id: 'child',
     title: 'Для ребенка',
-    description: 'История взросления, нежности, первых шагов и важнейших эпизодов жизни.'
+    description: 'История взросления и первых событий.'
   },
   {
     id: 'friend',
     title: 'Для друга или подруги',
-    description: 'Общая история дружбы, смеха, поддержки и моментов, которые невозможно забыть.'
+    description: 'История дружбы и общих событий.'
   },
   {
     id: 'family',
     title: 'Семейная книга',
-    description: 'Память о поколениях, традициях, поездках, доме и семейном тепле.'
+    description: 'Семейная хроника по поколениям.'
+  }
+];
+
+const booksPreview = [
+  {
+    id: 'book-1',
+    title: 'Тихий берег',
+    review: 'Спокойная семейная история без спешки.',
+    rating: 4.8,
+    coverText: 'ТБ'
+  },
+  {
+    id: 'book-2',
+    title: 'Наши выходные',
+    review: 'Короткие главы о теплых моментах.',
+    rating: 4.6,
+    coverText: 'НВ'
+  },
+  {
+    id: 'book-3',
+    title: 'Письма домой',
+    review: 'Личная книга о семье и памяти.',
+    rating: 4.9,
+    coverText: 'ПД'
+  },
+  {
+    id: 'book-4',
+    title: 'Маленькие даты',
+    review: 'Истории из повседневной жизни.',
+    rating: 4.7,
+    coverText: 'МД'
   }
 ];
 
@@ -206,6 +239,7 @@ let questions = getActiveQuestions();
 
 const els = {
   screens: document.querySelectorAll('.screen'),
+  bookList: document.getElementById('bookList'),
   bookTypeOptions: document.getElementById('bookTypeOptions'),
   customBookType: document.getElementById('customBookType'),
   confirmBookType: document.getElementById('confirmBookType'),
@@ -251,23 +285,154 @@ function init() {
     const matchedType = bookTypes.find((type) => type.title === appState.selectedBookType);
     appState.selectedBookTypeId = matchedType ? matchedType.id : 'custom';
   }
+  if (appState.selectedBookTypeId && appState.selectedBookTypeId !== 'custom') {
+    void ensureQuestionSetsLoaded()
+      .then(() => {
+        refreshQuestions();
+        renderForScreen(appState.activeScreen || 'screen-hero');
+      })
+      .catch(() => {});
+  }
   refreshQuestions();
+  renderBookList();
   renderBookTypes();
   bindStaticEvents();
+  initTouchFeedback();
   restoreInputs();
-  updatePaymentUI();
-  renderQuestion();
-  renderReview();
-  renderPhotos();
-  renderFinishState();
-  showScreen(appState.activeScreen || 'screen-hero');
+  showScreen(appState.activeScreen || 'screen-hero', { scroll: false });
+}
+
+function renderBookList() {
+  if (!els.bookList) return;
+  els.bookList.innerHTML = '';
+
+  booksPreview.forEach((book) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'book-list-item';
+    item.setAttribute('aria-label', `${book.title}, рейтинг ${book.rating}`);
+    item.innerHTML = `
+      <span class="book-cover" aria-hidden="true">${book.coverText}</span>
+      <span class="book-copy">
+        <strong>${book.title}</strong>
+        <small>${book.review}</small>
+      </span>
+      <span class="book-rating" aria-label="Рейтинг">★ ${book.rating.toFixed(1)}</span>
+    `;
+    els.bookList.appendChild(item);
+  });
+}
+
+function initTouchFeedback() {
+  const touchSelector = 'button, .upload-card, .choice-item, .checkbox-item';
+  let activeElement = null;
+
+  const clearActive = () => {
+    if (!activeElement) return;
+    activeElement.classList.remove('is-pressed');
+    activeElement = null;
+  };
+
+  document.addEventListener('pointerdown', (event) => {
+    const target = event.target.closest(touchSelector);
+    if (!target) return;
+    clearActive();
+    activeElement = target;
+    activeElement.classList.add('is-pressed');
+  });
+
+  document.addEventListener('pointerup', clearActive);
+  document.addEventListener('pointercancel', clearActive);
+  document.addEventListener('pointerleave', clearActive);
+  document.addEventListener('scroll', clearActive, true);
 }
 
 function initTelegram() {
-  if (window.Telegram && window.Telegram.WebApp) {
-    window.Telegram.WebApp.ready();
-    window.Telegram.WebApp.expand();
+  const webApp = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+
+  if (!webApp) {
+    applyTelegramTheme({});
+    const darkModeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemThemeChange = () => applyTelegramTheme({});
+    if (typeof darkModeMedia.addEventListener === 'function') {
+      darkModeMedia.addEventListener('change', handleSystemThemeChange);
+    } else if (typeof darkModeMedia.addListener === 'function') {
+      darkModeMedia.addListener(handleSystemThemeChange);
+    }
+    return;
   }
+
+  webApp.ready();
+  webApp.expand();
+  applyTelegramTheme(webApp.themeParams || {});
+  webApp.onEvent('themeChanged', () => applyTelegramTheme(webApp.themeParams || {}));
+}
+
+function applyTelegramTheme(theme = {}) {
+  const fallback = getDefaultThemeParams();
+  const resolvedTheme = {
+    bg_color: theme.bg_color || fallback.bg_color,
+    text_color: theme.text_color || fallback.text_color,
+    hint_color: theme.hint_color || fallback.hint_color,
+    link_color: theme.link_color || fallback.link_color,
+    button_color: theme.button_color || fallback.button_color,
+    button_text_color: theme.button_text_color || fallback.button_text_color,
+    secondary_bg_color: theme.secondary_bg_color || fallback.secondary_bg_color,
+    header_bg_color: theme.header_bg_color || fallback.header_bg_color,
+    accent_text_color: theme.accent_text_color || theme.link_color || fallback.accent_text_color,
+    section_bg_color: theme.section_bg_color || fallback.section_bg_color,
+    section_header_text_color: theme.section_header_text_color || fallback.section_header_text_color,
+    subtitle_text_color: theme.subtitle_text_color || fallback.subtitle_text_color,
+    destructive_text_color: theme.destructive_text_color || fallback.destructive_text_color
+  };
+
+  const root = document.documentElement;
+  const setVar = (name, value) => {
+    if (typeof value === 'string' && value.trim()) {
+      root.style.setProperty(name, value);
+    }
+  };
+
+  setVar('--tg-bg-color', resolvedTheme.bg_color);
+  setVar('--tg-text-color', resolvedTheme.text_color);
+  setVar('--tg-hint-color', resolvedTheme.hint_color);
+  setVar('--tg-link-color', resolvedTheme.link_color);
+  setVar('--tg-button-color', resolvedTheme.button_color);
+  setVar('--tg-button-text-color', resolvedTheme.button_text_color);
+  setVar('--tg-secondary-bg-color', resolvedTheme.secondary_bg_color);
+  setVar('--tg-header-bg-color', resolvedTheme.header_bg_color);
+  setVar('--tg-accent-text-color', resolvedTheme.accent_text_color);
+  setVar('--tg-section-bg-color', resolvedTheme.section_bg_color);
+  setVar('--tg-section-header-text-color', resolvedTheme.section_header_text_color);
+  setVar('--tg-subtitle-text-color', resolvedTheme.subtitle_text_color);
+  setVar('--tg-destructive-text-color', resolvedTheme.destructive_text_color);
+
+  const themeColor = resolvedTheme.bg_color;
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta && themeColor) {
+    themeMeta.setAttribute('content', themeColor);
+  }
+}
+
+function getDefaultThemeParams() {
+  const rootStyles = getComputedStyle(document.documentElement);
+  const read = (name, fallback) => rootStyles.getPropertyValue(name).trim() || fallback;
+
+  return {
+    bg_color: read('--tg-bg-color', 'Canvas'),
+    text_color: read('--tg-text-color', 'CanvasText'),
+    hint_color: read('--tg-hint-color', 'GrayText'),
+    link_color: read('--tg-link-color', 'LinkText'),
+    button_color: read('--tg-button-color', 'AccentColor'),
+    button_text_color: read('--tg-button-text-color', 'AccentColorText'),
+    secondary_bg_color: read('--tg-secondary-bg-color', 'ButtonFace'),
+    header_bg_color: read('--tg-header-bg-color', 'Canvas'),
+    accent_text_color: read('--tg-accent-text-color', 'LinkText'),
+    section_bg_color: read('--tg-section-bg-color', 'Canvas'),
+    section_header_text_color: read('--tg-section-header-text-color', 'GrayText'),
+    subtitle_text_color: read('--tg-subtitle-text-color', 'GrayText'),
+    destructive_text_color: read('--tg-destructive-text-color', 'Mark')
+  };
 }
 
 function cloneDefaultState() {
@@ -278,9 +443,6 @@ function bindStaticEvents() {
   document.querySelectorAll('[data-go-screen]').forEach((button) => {
     button.addEventListener('click', () => {
       const target = button.dataset.goScreen;
-      if (target === 'screen-photos') {
-        renderReview();
-      }
       showScreen(target);
     });
   });
@@ -315,7 +477,15 @@ function bindStaticEvents() {
   });
   els.mockPaymentButton.addEventListener('click', approvePayment);
   els.verifyCodeButton.addEventListener('click', verifyManagerCode);
-  els.goToQuestionnaire.addEventListener('click', () => showScreen('screen-questionnaire'));
+  els.goToQuestionnaire.addEventListener('click', async () => {
+    try {
+      await ensureQuestionSetsLoaded();
+    } catch (error) {
+      // Keep generic questions as fallback if lazy load fails.
+    }
+    refreshQuestions();
+    showScreen('screen-questionnaire');
+  });
   els.prevQuestionButton.addEventListener('click', goToPreviousQuestion);
   els.skipQuestionButton.addEventListener('click', skipQuestion);
   els.nextQuestionButton.addEventListener('click', goToNextQuestion);
@@ -356,7 +526,16 @@ function renderBookTypes() {
       appState.answers = {};
       appState.currentQuestionIndex = 0;
       els.customBookType.value = '';
-      refreshQuestions(true);
+      if (type.id !== 'custom') {
+        void ensureQuestionSetsLoaded()
+          .then(() => {
+            refreshQuestions(true);
+            renderForScreen(appState.activeScreen || 'screen-hero');
+          })
+          .catch(() => {});
+      } else {
+        refreshQuestions(true);
+      }
       persistState();
       renderBookTypes();
       updatePaymentUI();
@@ -365,7 +544,7 @@ function renderBookTypes() {
   });
 }
 
-function confirmBookType() {
+async function confirmBookType() {
   const customValue = els.customBookType.value.trim();
   if (customValue) {
     appState.selectedBookTypeId = 'custom';
@@ -377,8 +556,18 @@ function confirmBookType() {
   }
 
   if (!appState.selectedBookType) {
-    alert('Сначала выберите, для кого создается книга.');
+    alert('Выберите, кому книга.');
     return;
+  }
+
+  if (appState.selectedBookTypeId && appState.selectedBookTypeId !== 'custom') {
+    try {
+      await ensureQuestionSetsLoaded();
+      refreshQuestions(true);
+    } catch (error) {
+      // Keep generic questions as fallback if lazy load fails.
+      refreshQuestions(true);
+    }
   }
 
   persistState();
@@ -392,7 +581,7 @@ function approvePayment() {
   appState.managerCode = '';
   els.managerCodeInput.value = '';
   persistState();
-  updatePaymentUI('Тестовая оплата подтверждена. Реального списания нет, доступ к анкете открыт.');
+  updatePaymentUI('Оплата подтверждена. Доступ открыт.');
 }
 
 function verifyManagerCode() {
@@ -400,7 +589,7 @@ function verifyManagerCode() {
   appState.managerCode = code;
 
   if (!code) {
-    updatePaymentUI('Введите код доступа от менеджера.');
+    updatePaymentUI('Введите код.');
     persistState();
     return;
   }
@@ -409,18 +598,18 @@ function verifyManagerCode() {
     appState.paymentApproved = true;
     appState.paymentMethod = 'manager-code';
     persistState();
-    updatePaymentUI('Код подтвержден. Доступ к анкете открыт.');
+    updatePaymentUI('Код принят. Доступ открыт.');
     return;
   }
 
   appState.paymentApproved = false;
   appState.paymentMethod = '';
   persistState();
-  updatePaymentUI('Код не найден. Проверьте его или свяжитесь с менеджером.');
+  updatePaymentUI('Код не найден. Проверьте и попробуйте снова.');
 }
 
 function updatePaymentUI(message) {
-  const selected = appState.selectedBookType || 'Тип книги пока не выбран';
+  const selected = appState.selectedBookType || 'Тип книги не выбран';
   const hasContact = appState.customerName.trim() && appState.customerContact.trim();
   els.bookTypeSummary.textContent = `Выбрано: ${selected}`;
   els.goToQuestionnaire.disabled = !appState.paymentApproved || !hasContact;
@@ -429,10 +618,10 @@ function updatePaymentUI(message) {
     els.paymentStatusText.textContent = message;
   } else if (appState.paymentApproved) {
     els.paymentStatusText.textContent = hasContact
-      ? 'Доступ к анкете открыт.'
-      : 'Оплата подтверждена, но сначала укажите имя и контакт клиента.';
+      ? 'Доступ открыт.'
+      : 'Укажите имя и контакт.';
   } else {
-    els.paymentStatusText.textContent = 'Доступ к анкете пока закрыт.';
+    els.paymentStatusText.textContent = 'Доступ пока закрыт.';
   }
 }
 
@@ -474,7 +663,7 @@ function buildQuestionsFromSource(sourceQuestions) {
     id: `book-${getSelectedQuestionSetKey() || 'custom'}-${index + 1}`,
     chapterIndex: chapterTitles.indexOf(item.chapter || 'Без главы'),
     chapterTitle: item.chapter || 'Без главы',
-    chapterHint: 'Ответьте свободно и подробно. Именно из этих ответов будет собираться текст книги.',
+    chapterHint: 'Пишите коротко или подробно, как удобно.',
     chapterNumber: chapterTitles.indexOf(item.chapter || 'Без главы') + 1,
     totalChapters: chapterTitles.length,
     questionNumber: index + 1,
@@ -513,7 +702,7 @@ function renderQuestion() {
   els.questionText.textContent = question.text;
   els.questionHint.textContent = question.chapterHint;
   els.prevQuestionButton.disabled = appState.currentQuestionIndex === 0;
-  els.nextQuestionButton.textContent = current === total ? 'Перейти к обзору' : 'Далее';
+  els.nextQuestionButton.textContent = current === total ? 'К обзору' : 'Дальше';
   els.questionField.innerHTML = '';
 
   const field = buildField(question, answer);
@@ -526,7 +715,7 @@ function buildField(question, answer) {
       const input = document.createElement('input');
       input.className = 'input-control';
       input.type = 'text';
-      input.placeholder = 'Введите короткий ответ';
+      input.placeholder = 'Короткий ответ';
       input.value = typeof answer === 'string' ? answer : '';
       input.addEventListener('input', () => saveAnswer(question.id, input.value));
       return input;
@@ -535,7 +724,7 @@ function buildField(question, answer) {
       const textarea = document.createElement('textarea');
       textarea.className = 'input-control';
       textarea.rows = 7;
-      textarea.placeholder = 'Расскажите свободно и так, как чувствуете';
+      textarea.placeholder = 'Введите ответ';
       textarea.value = typeof answer === 'string' ? answer : '';
       textarea.addEventListener('input', () => saveAnswer(question.id, textarea.value));
       return textarea;
@@ -608,7 +797,6 @@ function skipQuestion() {
 
 function goToNextQuestion() {
   if (appState.currentQuestionIndex >= questions.length - 1) {
-    renderReview();
     showScreen('screen-review');
     return;
   }
@@ -625,7 +813,7 @@ function renderReview() {
   els.reviewStats.innerHTML = `
     <div class="summary-chip">Заполнено: ${filledCount}</div>
     <div class="summary-chip">Пропущено: ${skippedCount}</div>
-    <div class="summary-chip">Всего вопросов: ${questions.length}</div>
+    <div class="summary-chip">Всего: ${questions.length}</div>
   `;
 
   els.reviewList.innerHTML = '';
@@ -641,12 +829,11 @@ function renderReview() {
       </div>
       <strong>${question.questionNumber}. ${question.text}</strong>
       <p>${formatAnswer(answer)}</p>
-      <button class="ghost-button" type="button">Изменить ответ</button>
+      <button class="ghost-button" type="button">Открыть</button>
     `;
     item.querySelector('button').addEventListener('click', () => {
       appState.currentQuestionIndex = index;
       persistState();
-      renderQuestion();
       showScreen('screen-questionnaire');
     });
     els.reviewList.appendChild(item);
@@ -675,7 +862,7 @@ function handlePhotoUpload(event) {
   });
 
   if (incomingFiles.length > freeSlots) {
-    alert(`Можно загрузить не более ${MAX_PHOTOS} фотографий.`);
+    alert(`Лимит: ${MAX_PHOTOS} фото.`);
   }
 
   event.target.value = '';
@@ -686,7 +873,7 @@ function renderPhotos() {
   els.photoGrid.innerHTML = '';
 
   if (!appState.photos.length) {
-    els.photoGrid.innerHTML = '<div class="empty-state">Пока нет загруженных фотографий.</div>';
+    els.photoGrid.innerHTML = '<div class="empty-state">Фото пока нет.</div>';
     return;
   }
 
@@ -694,7 +881,7 @@ function renderPhotos() {
     const card = document.createElement('article');
     card.className = 'photo-card';
     card.innerHTML = `
-      <img src="${photo.preview}" alt="${photo.name}" />
+      <img src="${photo.preview}" alt="${photo.name}" loading="lazy" decoding="async" />
       <div class="photo-card-footer">
         <span>${index + 1}. ${truncate(photo.name, 16)}</span>
         <div>
@@ -728,7 +915,7 @@ function movePhoto(index, direction) {
 
 async function submitProject() {
   if (!appState.customerName.trim() || !appState.customerContact.trim()) {
-    alert('Укажите имя и контакт клиента перед отправкой.');
+    alert('Укажите имя и контакт.');
     showScreen('screen-payment');
     return;
   }
@@ -738,9 +925,8 @@ async function submitProject() {
   }
   appState.submittedAt = new Date().toISOString();
   appState.automationStatus = 'submitting';
-  appState.generationStatus = 'Заказ отправляется на сервер и ставится в очередь на генерацию книги.';
+  appState.generationStatus = 'Отправляем заказ на сервер.';
   persistState();
-  renderFinishState();
   showScreen('screen-finish');
 
   try {
@@ -759,7 +945,7 @@ async function submitProject() {
     const result = await response.json();
     appState.orderId = result.orderId || appState.orderId;
     appState.automationStatus = 'submitting';
-    appState.generationStatus = result.generationStatus || 'Заказ принят сервером и поставлен в очередь.';
+    appState.generationStatus = result.generationStatus || 'Заказ принят.';
     appState.generatedBook = '';
     appState.managerDeliveryStatus = '';
     persistState();
@@ -767,8 +953,8 @@ async function submitProject() {
     startOrderPolling();
   } catch (error) {
     appState.automationStatus = 'error';
-    appState.generationStatus = 'Backend пока не отвечает. Заказ сохранен только в браузере.';
-    appState.managerDeliveryStatus = 'Поднимите сервер и повторите отправку для генерации книги и уведомления менеджера.';
+    appState.generationStatus = 'Сервер недоступен. Заказ сохранен локально.';
+    appState.managerDeliveryStatus = 'Запустите сервер и отправьте заказ снова.';
     persistState();
     renderFinishState();
   }
@@ -781,20 +967,42 @@ function resetFlow() {
   persistState();
   restoreInputs();
   renderBookTypes();
-  updatePaymentUI();
-  renderQuestion();
-  renderReview();
-  renderPhotos();
-  showScreen('screen-hero');
+  showScreen('screen-hero', { scroll: false });
 }
 
-function showScreen(screenId) {
+function renderForScreen(screenId) {
+  if (screenId === 'screen-payment') {
+    updatePaymentUI();
+    return;
+  }
+  if (screenId === 'screen-questionnaire') {
+    renderQuestion();
+    return;
+  }
+  if (screenId === 'screen-review') {
+    renderReview();
+    return;
+  }
+  if (screenId === 'screen-photos') {
+    renderPhotos();
+    return;
+  }
+  if (screenId === 'screen-finish') {
+    renderFinishState();
+  }
+}
+
+function showScreen(screenId, options = {}) {
+  const shouldScroll = options.scroll !== false;
   els.screens.forEach((screen) => {
     screen.classList.toggle('is-active', screen.id === screenId);
   });
+  renderForScreen(screenId);
   appState.activeScreen = screenId;
   persistState();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (shouldScroll) {
+    window.scrollTo(0, 0);
+  }
 }
 
 async function retryGeneration() {
@@ -805,14 +1013,14 @@ async function retryGeneration() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     appState.automationStatus = 'submitting';
-    appState.generationStatus = 'Заказ повторно поставлен в очередь.';
+    appState.generationStatus = 'Заказ отправлен повторно.';
     appState.managerDeliveryStatus = '';
     persistState();
     renderFinishState();
     startOrderPolling();
   } catch (error) {
     appState.automationStatus = 'error';
-    appState.generationStatus = 'Не удалось повторно запустить генерацию.';
+    appState.generationStatus = 'Не удалось запустить повторно.';
     persistState();
     renderFinishState();
   }
@@ -910,41 +1118,41 @@ function renderFinishState() {
   els.retryGenerationButton.disabled = !appState.orderId;
 
   if (appState.automationStatus === 'submitting') {
-    els.orderStatusLabel.textContent = 'Книга создается';
+    els.orderStatusLabel.textContent = 'В обработке';
     els.automationStatusLine.textContent = appState.generationStatus;
     return;
   }
 
   if (appState.automationStatus === 'done-live') {
-    els.orderStatusLabel.textContent = 'Материалы готовы';
+    els.orderStatusLabel.textContent = 'Готово';
     els.automationStatusLine.textContent = appState.managerDeliveryStatus || appState.generationStatus;
     return;
   }
 
   if (appState.automationStatus === 'done-mock') {
-    els.orderStatusLabel.textContent = 'Черновик собран';
+    els.orderStatusLabel.textContent = 'Черновик готов';
     els.automationStatusLine.textContent = appState.managerDeliveryStatus || appState.generationStatus;
     return;
   }
 
   if (appState.automationStatus === 'error') {
-    els.orderStatusLabel.textContent = 'Нужна проверка';
+    els.orderStatusLabel.textContent = 'Ошибка';
     els.automationStatusLine.textContent = appState.managerDeliveryStatus || appState.generationStatus;
     return;
   }
 
   els.orderStatusLabel.textContent = 'Новый заказ';
-  els.automationStatusLine.textContent = 'Заказ принят и ожидает следующий этап обработки.';
+  els.automationStatusLine.textContent = 'Заказ принят.';
 }
 
 function formatAnswer(answer) {
   if (Array.isArray(answer)) {
-    return answer.length ? answer.join(', ') : 'Ответ пока не заполнен';
+    return answer.length ? answer.join(', ') : 'Нет ответа';
   }
   if (typeof answer === 'string' && answer.trim()) {
     return answer;
   }
-  return 'Ответ пока не заполнен';
+  return 'Нет ответа';
 }
 
 function isAnswerFilled(answer) {
@@ -977,4 +1185,27 @@ function loadState() {
 
 function persistState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+}
+
+function ensureQuestionSetsLoaded() {
+  if (questionSetsLoaded) return Promise.resolve();
+  if (questionSetsLoadingPromise) return questionSetsLoadingPromise;
+
+  questionSetsLoadingPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'questionSets.js';
+    script.async = true;
+    script.onload = () => {
+      questionSetsLoaded = true;
+      questionSetsLoadingPromise = null;
+      resolve();
+    };
+    script.onerror = () => {
+      questionSetsLoadingPromise = null;
+      reject(new Error('Failed to load question sets'));
+    };
+    document.body.appendChild(script);
+  });
+
+  return questionSetsLoadingPromise;
 }

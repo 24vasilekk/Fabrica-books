@@ -3,68 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#ab93ef" />
+    <meta name="theme-color" content="Canvas" />
     <title>Фабрика воспоминаний books</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app-shell">
-      <div class="ambient ambient-left"></div>
-      <div class="ambient ambient-right"></div>
-
       <main class="screen-stack">
         <section class="screen is-active" id="screen-hero">
-          <div class="hero-intro">
-            <div class="hero-badge">Фабрика воспоминаний books</div>
-            <p class="hero-meta">Персональная книга для печати, собранная из ваших ответов и фотографий</p>
-          </div>
-          <div class="hero-card glass-card">
-            <p class="eyebrow">Персональная книга на основе вашей истории</p>
-            <h2>Книга, в которой живут ваши чувства</h2>
-            <p class="lead">
-              Фабрика воспоминаний books превращает вашу историю в книгу для печати: вы выбираете формат,
-              отвечаете на вопросы, добавляете фотографии, а дальше команда собирает текст и макет.
-            </p>
-            <div class="hero-actions">
-              <button class="primary-button" type="button" data-go-screen="screen-book-type">Создать книгу</button>
-              <button class="secondary-button" type="button" data-scroll-to="how-it-works">Как это работает</button>
+          <div class="home-header glass-card">
+            <div>
+              <p class="eyebrow">Книги</p>
+              <h2>Библиотека</h2>
             </div>
-            <div class="feature-grid">
-              <article>
-                <span>01</span>
-                <h3>100 вопросов</h3>
-                <p>Анкета разбита на главы и сохраняется автоматически.</p>
-              </article>
-              <article>
-                <span>02</span>
-                <h3>До 50 фото</h3>
-                <p>Фотографии загружаются после анкеты и собираются в один заказ.</p>
-              </article>
-              <article>
-                <span>03</span>
-                <h3>AI-генерация</h3>
-                <p>На основе ответов формируется текст книги для команды и верстки.</p>
-              </article>
+            <button class="secondary-button" type="button" data-go-screen="screen-book-type">Новый заказ</button>
+          </div>
+
+          <nav class="home-nav" aria-label="Разделы">
+            <button class="home-tab is-active" type="button" data-home-tab="tab-books">Книги</button>
+            <button class="home-tab" type="button" data-home-tab="tab-reviews">Отзывы</button>
+            <button class="home-tab" type="button" data-home-tab="tab-actions">Действия</button>
+          </nav>
+
+          <div class="home-panel is-active" id="tab-books">
+            <div class="story-block">
+              <div class="section-heading">
+                <p class="eyebrow">Подборка</p>
+                <h3>Популярные книги</h3>
+              </div>
+              <div class="book-list" id="bookList"></div>
             </div>
           </div>
 
-          <div class="story-block" id="how-it-works">
-            <div class="section-heading">
-              <p class="eyebrow">Как устроен процесс</p>
-              <h3>Мобильный сценарий, удобный внутри Telegram</h3>
+          <div class="home-panel" id="tab-reviews">
+            <div class="story-block">
+              <div class="section-heading">
+                <p class="eyebrow">Отзывы</p>
+                <h3>Что пишут читатели</h3>
+              </div>
+              <div class="book-list" id="featuredReviewList"></div>
             </div>
-            <div class="timeline">
-              <article><strong>1</strong><p>Выбираете формат книги и получателя.</p></article>
-              <article><strong>2</strong><p>Оплачиваете заказ или вводите код от менеджера.</p></article>
-              <article><strong>3</strong><p>Заполняете анкету по главам с прогрессом.</p></article>
-              <article><strong>4</strong><p>Загружаете до 50 значимых фотографий.</p></article>
-              <article><strong>5</strong><p>Получаем текст, собираем макет и передаем в печать.</p></article>
+          </div>
+
+          <div class="home-panel" id="tab-actions">
+            <div class="story-block">
+              <div class="section-heading">
+                <p class="eyebrow">Быстрые действия</p>
+                <h3>Продолжить работу</h3>
+              </div>
+              <div class="action-row">
+                <button class="primary-button" type="button" data-go-screen="screen-book-type">Создать заказ</button>
+                <button class="secondary-button" type="button" data-go-screen="screen-review">Проверить ответы</button>
+                <button class="secondary-button" type="button" data-go-screen="screen-photos">Открыть фото</button>
+              </div>
             </div>
           </div>
         </section>
@@ -73,17 +64,17 @@
           <div class="glass-card step-card">
             <div class="section-heading">
               <p class="eyebrow">Шаг 1</p>
-              <h2>Для кого будет эта книга?</h2>
-              <p>Выберите основу истории. Это поможет настроить тон анкеты и будущий текст.</p>
+              <h2>Кому книга?</h2>
+              <p>Выберите вариант или введите свой.</p>
             </div>
             <div class="option-grid" id="bookTypeOptions"></div>
             <label class="field custom-type-field">
-              <span>Или введите свой вариант</span>
-              <input type="text" id="customBookType" maxlength="80" placeholder="Например: книга для бабушки" />
+              <span>Свой вариант</span>
+              <input type="text" id="customBookType" maxlength="80" placeholder="Например: для бабушки" />
             </label>
             <div class="action-row">
               <button class="secondary-button" type="button" data-go-screen="screen-hero">Назад</button>
-              <button class="primary-button" type="button" id="confirmBookType">Продолжить</button>
+              <button class="primary-button" type="button" id="confirmBookType">Дальше</button>
             </div>
           </div>
         </section>
@@ -92,17 +83,17 @@
           <div class="glass-card step-card">
             <div class="section-heading">
               <p class="eyebrow">Шаг 2</p>
-              <h2>Откройте доступ к анкете</h2>
-              <p>Можно оплатить онлайн или ввести код, если заказ уже оформлен через менеджера.</p>
+              <h2>Доступ к анкете</h2>
+              <p>Оплатите тестово или введите код менеджера.</p>
             </div>
             <div class="summary-chip" id="bookTypeSummary"></div>
             <div class="payment-grid contact-grid">
               <label class="field">
-                <span>Имя клиента</span>
+                <span>Ваше имя</span>
                 <input type="text" id="customerNameInput" placeholder="Как к вам обращаться" />
               </label>
               <label class="field">
-                <span>Telegram / телефон</span>
+                <span>Telegram или телефон</span>
                 <input type="text" id="customerContactInput" placeholder="@username или +7..." />
               </label>
             </div>
@@ -110,24 +101,24 @@
               <article class="payment-card active-highlight">
                 <p class="eyebrow">Вариант 1</p>
                 <h3>Тестовая оплата</h3>
-                <p>Сейчас это не настоящая оплата. Кнопка просто имитирует успешный платеж и открывает доступ к анкете.</p>
+                <p>Демо-режим. Деньги не списываются.</p>
                 <button class="primary-button" type="button" id="mockPaymentButton">Оплатить 5 990 ₽ (тест)</button>
               </article>
               <article class="payment-card">
                 <p class="eyebrow">Вариант 2</p>
-                <h3>Код от менеджера</h3>
-                <p>Введите код доступа, если оплатили заказ напрямую через команду.</p>
+                <h3>Код менеджера</h3>
+                <p>Для заказов, оформленных вручную.</p>
                 <label class="field">
-                  <span>Код доступа</span>
+                  <span>Код</span>
                   <input type="text" id="managerCodeInput" placeholder="Например: BOOKS-2026" />
                 </label>
-                <button class="secondary-button wide" type="button" id="verifyCodeButton">Проверить код</button>
+                <button class="secondary-button wide" type="button" id="verifyCodeButton">Проверить</button>
               </article>
             </div>
-            <p class="status-text" id="paymentStatusText">Доступ к анкете пока закрыт.</p>
+            <p class="status-text" id="paymentStatusText">Доступ пока закрыт.</p>
             <div class="action-row">
               <button class="secondary-button" type="button" data-go-screen="screen-book-type">Назад</button>
-              <button class="primary-button" type="button" id="goToQuestionnaire" disabled>Перейти к анкете</button>
+              <button class="primary-button" type="button" id="goToQuestionnaire" disabled>К анкете</button>
             </div>
           </div>
         </section>
@@ -147,10 +138,10 @@
               <div id="questionField"></div>
             </div>
             <div class="action-column">
-              <button class="secondary-button wide" type="button" id="prevQuestionButton">Вернуться к предыдущему вопросу</button>
+              <button class="secondary-button wide" type="button" id="prevQuestionButton">Назад</button>
               <div class="action-row compact-row">
                 <button class="ghost-button" type="button" id="skipQuestionButton">Пропустить</button>
-                <button class="primary-button" type="button" id="nextQuestionButton">Далее</button>
+                <button class="primary-button" type="button" id="nextQuestionButton">Дальше</button>
               </div>
             </div>
           </div>
@@ -160,14 +151,14 @@
           <div class="glass-card step-card">
             <div class="section-heading">
               <p class="eyebrow">Шаг 3</p>
-              <h2>Обзор ваших ответов</h2>
-              <p>Можно быстро проверить, что уже заполнено, и вернуться к любому вопросу.</p>
+              <h2>Проверьте ответы</h2>
+              <p>Откройте любой вопрос, если нужно исправить.</p>
             </div>
             <div class="review-stats" id="reviewStats"></div>
             <div class="review-list" id="reviewList"></div>
             <div class="action-row">
-              <button class="secondary-button" type="button" id="backToQuestions">Вернуться к анкете</button>
-              <button class="primary-button" type="button" data-go-screen="screen-photos">Продолжить к фото</button>
+              <button class="secondary-button" type="button" id="backToQuestions">К анкете</button>
+              <button class="primary-button" type="button" data-go-screen="screen-photos">К фото</button>
             </div>
           </div>
         </section>
@@ -176,8 +167,8 @@
           <div class="glass-card step-card">
             <div class="section-heading">
               <p class="eyebrow">Шаг 4</p>
-              <h2>Добавьте фотографии для книги</h2>
-              <p>Фото можно добавить сейчас или пропустить этот шаг и отправить только ответы анкеты.</p>
+              <h2>Добавьте фото</h2>
+              <p>Можно пропустить шаг и отправить только анкету.</p>
             </div>
             <div class="photo-meta">
               <div class="summary-chip" id="photoCounter">Загружено 0 / 50</div>
@@ -185,28 +176,27 @@
             </div>
             <label class="upload-card" for="photoInput">
               <input type="file" id="photoInput" accept="image/*" multiple />
-              <strong>Добавить фотографии</strong>
-              <span>Нажмите, чтобы выбрать файлы на телефоне</span>
+              <strong>Выбрать фото</strong>
+              <span>Нажмите, чтобы открыть файлы</span>
             </label>
             <label class="field">
               <span>Комментарий к фотографиям</span>
-              <textarea id="photoComment" rows="4" placeholder="Например: первые 10 фото — детство, дальше — семейные поездки"></textarea>
+              <textarea id="photoComment" rows="4" placeholder="Например: сначала детство, потом поездки"></textarea>
             </label>
             <div class="photo-grid" id="photoGrid"></div>
             <div class="action-row">
               <button class="secondary-button" type="button" data-go-screen="screen-review">Назад</button>
-              <button class="primary-button" type="button" id="submitProjectButton">Завершить и отправить</button>
+              <button class="primary-button" type="button" id="submitProjectButton">Отправить</button>
             </div>
           </div>
         </section>
 
         <section class="screen" id="screen-finish">
           <div class="glass-card finish-card">
-            <p class="eyebrow">Материалы отправлены</p>
-            <h2>Заказ принят в работу</h2>
+            <p class="eyebrow">Готово</p>
+            <h2>Заказ отправлен</h2>
             <p class="lead">
-              Анкета сохранена. Если фотографии были добавлены, они тоже прикреплены к заказу. Следующий шаг: система сформирует текст книги, после чего команда
-              подготовит макет и передаст его в типографию.
+              Анкета сохранена. Если вы добавили фото, они тоже отправлены.
             </p>
             <div class="finish-grid">
               <article>
@@ -223,11 +213,11 @@
               </article>
             </div>
             <div class="result-box">
-              <h3>Что происходит дальше</h3>
+              <h3>Что дальше</h3>
               <ul>
                 <li id="automationStatusLine">Заказ принят и поставлен в обработку.</li>
-                <li>Текст книги собирается по вашим ответам и, при наличии, по фотографиям.</li>
-                <li>После генерации команда проверит материалы и подготовит макет.</li>
+                <li>Текст собирается по анкете и фотографиям.</li>
+                <li>Дальше команда готовит макет.</li>
               </ul>
             </div>
             <div class="action-row">
@@ -240,7 +230,7 @@
       </main>
     </div>
 
-    <script src="questionSets.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
