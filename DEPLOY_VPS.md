@@ -23,6 +23,7 @@ cp .env.example .env
 HOST=127.0.0.1
 PORT=3000
 PUBLIC_BASE_URL=https://books.your-domain.com
+CORS_ALLOW_ORIGIN=https://fabrica-books.vercel.app
 
 OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=deepseek/deepseek-v3.2

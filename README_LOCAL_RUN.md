@@ -16,6 +16,7 @@ TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
 TELEGRAM_MANAGER_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
 
 PUBLIC_BASE_URL=http://localhost:3000
+CORS_ALLOW_ORIGIN=*
 ```
 
 ## Start
@@ -27,6 +28,11 @@ node server.js
 - Site: `http://localhost:3000`
 - Admin: `http://localhost:3000/admin.html`
 - Health: `http://localhost:3000/api/health`
+
+## If frontend and backend are on different domains
+1. Deploy backend and set `CORS_ALLOW_ORIGIN=https://your-frontend-domain`.
+2. In app (`Личный кабинет`) set `API сервера` and click `Применить`.
+3. In admin (`/admin.html`) set the same API URL and click `Применить`.
 
 ## What happens after sending the order
 1. Order is saved locally in `data/db.json`

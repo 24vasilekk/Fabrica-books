@@ -6,7 +6,7 @@ const VALID_MANAGER_CODES = ['BOOKS-2026', 'FABRIKA-BOOKS', 'MEMORY-ACCESS'];
 let orderPollingTimer = null;
 let questionSetsLoaded = typeof window.BOOK_QUESTION_SETS !== 'undefined';
 let questionSetsLoadingPromise = null;
-const API_BASE_URL = resolveApiBaseUrl();
+let apiBaseUrl = resolveApiBaseUrl();
 
 const bookTypes = [
   {
@@ -271,6 +271,11 @@ const els = {
   bookList: document.getElementById('bookList'),
   favoritesList: document.getElementById('favoritesList'),
   profileList: document.getElementById('profileList'),
+  apiBaseInput: document.getElementById('apiBaseInput'),
+  saveApiBaseButton: document.getElementById('saveApiBaseButton'),
+  checkApiHealthButton: document.getElementById('checkApiHealthButton'),
+  clearApiBaseButton: document.getElementById('clearApiBaseButton'),
+  apiConnectionStatus: document.getElementById('apiConnectionStatus'),
   bookTypeOptions: document.getElementById('bookTypeOptions'),
   customBookType: document.getElementById('customBookType'),
   confirmBookType: document.getElementById('confirmBookType'),
@@ -375,7 +380,7 @@ function normalizeApiBase(value) {
 }
 
 function apiUrl(pathname) {
-  return `${API_BASE_URL}${pathname}`;
+  return `${apiBaseUrl}${pathname}`;
 }
 
 function renderBookList() {
@@ -638,6 +643,24 @@ function bindStaticEvents() {
       setActiveAppSection(button.dataset.appSection);
     });
   });
+
+  if (els.saveApiBaseButton) {
+    els.saveApiBaseButton.addEventListener('click', applyApiBaseFromInput);
+  }
+  if (els.checkApiHealthButton) {
+    els.checkApiHealthButton.addEventListener('click', checkApiHealth);
+  }
+  if (els.clearApiBaseButton) {
+    els.clearApiBaseButton.addEventListener('click', clearApiBase);
+  }
+  if (els.apiBaseInput) {
+    els.apiBaseInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applyApiBaseFromInput();
+      }
+    });
+  }
 }
 
 function restoreInputs() {
@@ -646,6 +669,57 @@ function restoreInputs() {
   els.customerContactInput.value = appState.customerContact || '';
   els.managerCodeInput.value = appState.managerCode || '';
   els.photoComment.value = appState.photoComment || '';
+  if (els.apiBaseInput) {
+    els.apiBaseInput.value = apiBaseUrl;
+  }
+  updateApiConnectionStatus();
+}
+
+function updateApiConnectionStatus(message) {
+  if (!els.apiConnectionStatus) return;
+  if (message) {
+    els.apiConnectionStatus.textContent = message;
+    return;
+  }
+  els.apiConnectionStatus.textContent = `API: ${apiBaseUrl || 'same-origin (/api...)'}`;
+}
+
+function applyApiBaseFromInput() {
+  if (!els.apiBaseInput) return;
+  apiBaseUrl = normalizeApiBase(els.apiBaseInput.value);
+  try {
+    if (apiBaseUrl) {
+      localStorage.setItem(API_BASE_STORAGE_KEY, apiBaseUrl);
+    } else {
+      localStorage.removeItem(API_BASE_STORAGE_KEY);
+    }
+  } catch (error) {}
+  updateApiConnectionStatus(`API сохранен: ${apiBaseUrl || 'same-origin (/api...)'}`);
+}
+
+function clearApiBase() {
+  apiBaseUrl = '';
+  try {
+    localStorage.removeItem(API_BASE_STORAGE_KEY);
+  } catch (error) {}
+  if (els.apiBaseInput) {
+    els.apiBaseInput.value = '';
+  }
+  updateApiConnectionStatus('API сброшен: same-origin (/api...)');
+}
+
+async function checkApiHealth() {
+  updateApiConnectionStatus('Проверяем соединение...');
+  try {
+    const response = await fetch(apiUrl('/api/health'));
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    updateApiConnectionStatus(`Соединение есть. Режим: ${data.mode || 'unknown'}`);
+  } catch (error) {
+    updateApiConnectionStatus(`Нет связи с API: ${error.message || 'unknown error'}`);
+  }
 }
 
 function renderBookTypes() {

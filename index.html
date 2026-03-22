@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260321-1" />
+    <link rel="stylesheet" href="styles.css?v=20260322-2" />
   </head>
   <body>
     <div class="app-shell">
@@ -60,6 +60,16 @@
                   <h3>Ваши данные</h3>
                 </div>
                 <div class="book-list" id="profileList"></div>
+                <label class="field">
+                  <span>API сервера</span>
+                  <input class="input-control" type="url" id="apiBaseInput" placeholder="Например: https://books-api.example.com" />
+                </label>
+                <p class="status-text" id="apiConnectionStatus">API: same-origin (/api...)</p>
+                <div class="action-row compact-row">
+                  <button class="secondary-button" type="button" id="saveApiBaseButton">Применить</button>
+                  <button class="ghost-button" type="button" id="checkApiHealthButton">Проверить</button>
+                  <button class="ghost-button" type="button" id="clearApiBaseButton">Сбросить</button>
+                </div>
                 <div class="action-row">
                   <button class="primary-button" type="button" data-go-screen="screen-review">Открыть ответы</button>
                   <button class="secondary-button" type="button" data-go-screen="screen-photos">Открыть фото</button>
@@ -245,6 +255,6 @@
     </div>
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="app.js?v=20260321-1"></script>
+    <script src="app.js?v=20260322-2"></script>
   </body>
 </html>
