@@ -14,7 +14,7 @@ const {
 loadEnvFile(path.join(__dirname, '.env'));
 
 const PORT = Number(process.env.PORT || 3000);
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2';
 const OPENROUTER_MODEL_OUTLINE = process.env.OPENROUTER_MODEL_OUTLINE || DEFAULT_OPENROUTER_MODEL;
