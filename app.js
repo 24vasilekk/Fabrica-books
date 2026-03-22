@@ -438,6 +438,16 @@ function renderProfileList() {
   const safePhotoUrl = escapeHtmlInline(telegramProfile.photoUrl);
 
   els.profileList.innerHTML = `
+    <article class="book-list-item profile-item profile-item-top">
+      <span class="book-cover profile-avatar" aria-hidden="true">
+        ${telegramProfile.photoUrl ? `<img src="${safePhotoUrl}" alt="" loading="lazy" />` : getInitials(telegramProfile.name)}
+      </span>
+      <span class="book-copy">
+        <strong>${safeName}</strong>
+        <small>${telegramProfile.username ? `@${safeUsername}` : 'Профиль из Telegram'}</small>
+      </span>
+      <span class="book-rating">•</span>
+    </article>
     <button class="book-list-item profile-item profile-action" type="button" data-profile-action="orders">
       <span class="book-cover" aria-hidden="true">●</span>
       <span class="book-copy">
@@ -454,16 +464,6 @@ function renderProfileList() {
       </span>
       <span class="book-rating">›</span>
     </button>
-    <article class="book-list-item profile-item">
-      <span class="book-cover profile-avatar" aria-hidden="true">
-        ${telegramProfile.photoUrl ? `<img src="${safePhotoUrl}" alt="" loading="lazy" />` : getInitials(telegramProfile.name)}
-      </span>
-      <span class="book-copy">
-        <strong>${safeName}</strong>
-        <small>${telegramProfile.username ? `@${safeUsername}` : 'Telegram-профиль'}</small>
-      </span>
-      <span class="book-rating">•</span>
-    </article>
   `;
 
   const ordersButton = els.profileList.querySelector('[data-profile-action="orders"]');

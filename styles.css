@@ -487,6 +487,10 @@ label, input, textarea, button {
   cursor: default;
 }
 
+.profile-item-top {
+  background: rgba(255, 255, 255, 0.98);
+}
+
 .profile-action {
   cursor: pointer;
 }
