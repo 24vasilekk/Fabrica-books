@@ -27,6 +27,7 @@ const OPENROUTER_EXPAND_MAX_TOKENS = Number(process.env.OPENROUTER_EXPAND_MAX_TO
 const OPENROUTER_EDIT_MAX_TOKENS = Number(process.env.OPENROUTER_EDIT_MAX_TOKENS || 12000);
 const OPENROUTER_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS || 70000);
 const OPENROUTER_MAX_RETRIES = Number(process.env.OPENROUTER_MAX_RETRIES || 3);
+const CORS_ALLOW_ORIGIN = process.env.CORS_ALLOW_ORIGIN || '*';
 const SEND_TO_TELEGRAM = process.env.SEND_TO_TELEGRAM === 'true';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_MANAGER_CHAT_ID = process.env.TELEGRAM_MANAGER_CHAT_ID || '';
@@ -50,7 +51,16 @@ ensurePersistence();
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === 'GET' && req.url === '/api/health') {
+    const requestPath = (req.url || '/').split('?')[0];
+
+    if (req.method === 'OPTIONS' && requestPath.startsWith('/api/')) {
+      writeCorsHeaders(res);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && requestPath === '/api/health') {
       return sendJson(res, 200, {
         ok: true,
         mode: OPENROUTER_API_KEY ? 'live-capable' : 'mock-only',
@@ -68,15 +78,15 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (req.method === 'GET' && req.url === '/api/orders') {
+    if (req.method === 'GET' && requestPath === '/api/orders') {
       const db = readDb();
       return sendJson(res, 200, {
         orders: db.orders.slice().sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
       });
     }
 
-    if (req.method === 'GET' && req.url.startsWith('/api/orders/')) {
-      const cleanPath = req.url.split('?')[0];
+    if (req.method === 'GET' && requestPath.startsWith('/api/orders/')) {
+      const cleanPath = requestPath;
       const orderId = decodeURIComponent(
         cleanPath
           .replace('/api/orders/', '')
@@ -91,7 +101,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    if (req.method === 'POST' && req.url === '/api/orders') {
+    if (req.method === 'POST' && requestPath === '/api/orders') {
       const body = await readJson(req);
       const order = normalizeOrder(body);
       validateOrder(order);
@@ -106,8 +116,8 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (req.method === 'POST' && req.url.startsWith('/api/orders/') && req.url.endsWith('/retry')) {
-      const orderId = decodeURIComponent(req.url.replace('/api/orders/', '').replace('/retry', ''));
+    if (req.method === 'POST' && requestPath.startsWith('/api/orders/') && requestPath.endsWith('/retry')) {
+      const orderId = decodeURIComponent(requestPath.replace('/api/orders/', '').replace('/retry', ''));
       const order = readDb().orders.find((item) => item.orderId === orderId);
       if (!order) return sendJson(res, 404, { error: 'Order not found' });
       await updateStoredOrder(orderId, {
@@ -118,8 +128,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 202, { accepted: true, orderId, status: 'queued' });
     }
 
-    if (req.method === 'POST' && req.url.startsWith('/api/orders/') && req.url.endsWith('/regenerate-chapter')) {
-      const orderId = decodeURIComponent(req.url.replace('/api/orders/', '').replace('/regenerate-chapter', ''));
+    if (req.method === 'POST' && requestPath.startsWith('/api/orders/') && requestPath.endsWith('/regenerate-chapter')) {
+      const orderId = decodeURIComponent(requestPath.replace('/api/orders/', '').replace('/regenerate-chapter', ''));
       const order = readDb().orders.find((item) => item.orderId === orderId);
       if (!order) return sendJson(res, 404, { error: 'Order not found' });
       const body = await readJson(req);
@@ -939,8 +949,15 @@ async function notifyManager(order, generationResult) {
 }
 
 function sendJson(res, code, payload) {
+  writeCorsHeaders(res);
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
+}
+
+function writeCorsHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', CORS_ALLOW_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 function readJson(req) {
@@ -955,13 +972,15 @@ function readJson(req) {
 }
 
 function serveStatic(req, res) {
-  const targetPath = req.url === '/' ? '/index.html' : req.url;
+  const requestPath = (req.url || '/').split('?')[0];
+  const targetPath = requestPath === '/' ? '/index.html' : requestPath;
   const safePath = path.normalize(targetPath).replace(/^\.+/, '');
   const filePath = path.join(__dirname, safePath);
   if (!filePath.startsWith(__dirname)) return sendJson(res, 403, { error: 'Forbidden' });
 
   fs.readFile(filePath, (error, data) => {
     if (error) return sendJson(res, 404, { error: 'Not found' });
+    writeCorsHeaders(res);
     res.writeHead(200, { 'Content-Type': getContentType(filePath) });
     res.end(data);
   });

@@ -36,6 +36,8 @@
       .chapter-card textarea { min-height: 80px; margin-top: 8px; }
       .chapter-actions { display: flex; gap: 8px; margin-top: 8px; }
       .inline-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      .api-config-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+      .api-endpoint { margin: 6px 0 0; font-size: 12px; color: var(--text-soft); }
       @media (min-width: 980px) {
         .admin-layout { grid-template-columns: 360px 1fr; align-items: start; }
         .admin-sidebar { position: sticky; top: 12px; }
@@ -50,6 +52,11 @@
           <h2>Управление заказами и генерацией</h2>
           <p id="healthText">Проверяем состояние сервера...</p>
         </div>
+        <div class="api-config-row">
+          <input class="input-control" type="url" id="apiBaseInput" placeholder="API URL, например https://your-backend.onrender.com" />
+          <button class="secondary-button" type="button" id="saveApiBaseButton">Применить</button>
+        </div>
+        <p class="api-endpoint" id="apiEndpointText"></p>
         <div class="stats" id="globalStats"></div>
         <div class="inline-actions">
           <button class="secondary-button" type="button" id="refreshOrders">Обновить</button>
@@ -102,28 +109,90 @@
         searchInput: document.getElementById('searchInput'),
         statusFilter: document.getElementById('statusFilter'),
         healthText: document.getElementById('healthText'),
-        globalStats: document.getElementById('globalStats')
+        globalStats: document.getElementById('globalStats'),
+        apiBaseInput: document.getElementById('apiBaseInput'),
+        saveApiBaseButton: document.getElementById('saveApiBaseButton'),
+        apiEndpointText: document.getElementById('apiEndpointText')
       };
 
+      const API_BASE_STORAGE_KEY = 'fabrika-books-api-base-url';
       let allOrders = [];
       let activeOrderId = '';
       let autoRefresh = true;
       let autoRefreshTimer = null;
+      let apiBase = resolveApiBaseUrl();
 
       init();
 
       function init() {
+        els.apiBaseInput.value = apiBase;
+        updateApiBaseHint();
         els.refresh.addEventListener('click', loadOrders);
         els.toggleAutoRefresh.addEventListener('click', () => {
           autoRefresh = !autoRefresh;
           els.toggleAutoRefresh.textContent = `Автообновление: ${autoRefresh ? 'вкл' : 'выкл'}`;
           setupAutoRefresh();
         });
+        els.saveApiBaseButton.addEventListener('click', applyApiBaseFromInput);
+        els.apiBaseInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            applyApiBaseFromInput();
+          }
+        });
         els.searchInput.addEventListener('input', renderOrdersList);
         els.statusFilter.addEventListener('change', renderOrdersList);
         loadHealth();
         loadOrders();
         setupAutoRefresh();
+      }
+
+      function resolveApiBaseUrl() {
+        try {
+          const url = new URL(window.location.href);
+          const fromQuery = (url.searchParams.get('api') || '').trim();
+          if (fromQuery) {
+            const normalized = normalizeApiBase(fromQuery);
+            localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
+            return normalized;
+          }
+
+          const stored = (localStorage.getItem(API_BASE_STORAGE_KEY) || '').trim();
+          if (stored) return normalizeApiBase(stored);
+          if (typeof window.__FABRIKA_API_BASE_URL__ === 'string' && window.__FABRIKA_API_BASE_URL__.trim()) {
+            return normalizeApiBase(window.__FABRIKA_API_BASE_URL__);
+          }
+          return '';
+        } catch (error) {
+          return '';
+        }
+      }
+
+      function normalizeApiBase(value) {
+        return String(value || '').trim().replace(/\/+$/, '');
+      }
+
+      function apiUrl(pathname) {
+        return `${apiBase}${pathname}`;
+      }
+
+      function updateApiBaseHint() {
+        els.apiEndpointText.textContent = `Текущий API: ${apiBase || 'same-origin (/api...)'}`;
+      }
+
+      function applyApiBaseFromInput() {
+        const nextValue = normalizeApiBase(els.apiBaseInput.value);
+        apiBase = nextValue;
+        try {
+          if (apiBase) {
+            localStorage.setItem(API_BASE_STORAGE_KEY, apiBase);
+          } else {
+            localStorage.removeItem(API_BASE_STORAGE_KEY);
+          }
+        } catch (error) {}
+        updateApiBaseHint();
+        loadHealth();
+        loadOrders();
       }
 
       function setupAutoRefresh() {
@@ -137,17 +206,17 @@
 
       async function loadHealth(options = {}) {
         try {
-          const response = await fetch('/api/health');
+          const response = await fetch(apiUrl('/api/health'));
           const health = await response.json();
           els.healthText.textContent = `Режим: ${health.mode} · Очередь: ${health.queueLength} · В работе: ${health.currentlyProcessing ? 'да' : 'нет'}`;
         } catch (error) {
-          if (!options.silent) els.healthText.textContent = 'Не удалось получить /api/health';
+          if (!options.silent) els.healthText.textContent = `Не удалось получить ${apiUrl('/api/health')}`;
         }
       }
 
       async function loadOrders(options = {}) {
         try {
-          const response = await fetch('/api/orders');
+          const response = await fetch(apiUrl('/api/orders'));
           const data = await response.json();
           allOrders = Array.isArray(data.orders) ? data.orders : [];
           updateStats(allOrders);
@@ -228,7 +297,7 @@
           activeOrderId = orderId;
           renderOrdersList();
 
-          const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+          const response = await fetch(apiUrl(`/api/orders/${encodeURIComponent(orderId)}`));
           const order = await response.json();
           if (!response.ok) throw new Error(order.error || 'Order load failed');
 
@@ -329,7 +398,7 @@
             retryButton.disabled = true;
             retryButton.textContent = 'Отправка...';
             try {
-              const response = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}/retry`, { method: 'POST' });
+              const response = await fetch(apiUrl(`/api/orders/${encodeURIComponent(order.orderId)}/retry`), { method: 'POST' });
               const data = await response.json();
               if (!response.ok) throw new Error(data.error || 'Не удалось переочередить');
               await loadOrders();
@@ -382,7 +451,7 @@
             button.textContent = 'Перегенерация...';
 
             try {
-              const response = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}/regenerate-chapter`, {
+              const response = await fetch(apiUrl(`/api/orders/${encodeURIComponent(order.orderId)}/regenerate-chapter`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ chapterIndex, instruction })

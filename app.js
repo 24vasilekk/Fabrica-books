@@ -1,10 +1,12 @@
 const STORAGE_KEY = 'fabrika-books-webapp-state';
+const API_BASE_STORAGE_KEY = 'fabrika-books-api-base-url';
 const MAX_PHOTOS = 50;
 const MIN_RECOMMENDED_ANSWERED = 30;
 const VALID_MANAGER_CODES = ['BOOKS-2026', 'FABRIKA-BOOKS', 'MEMORY-ACCESS'];
 let orderPollingTimer = null;
 let questionSetsLoaded = typeof window.BOOK_QUESTION_SETS !== 'undefined';
 let questionSetsLoadingPromise = null;
+const API_BASE_URL = resolveApiBaseUrl();
 
 const bookTypes = [
   {
@@ -346,6 +348,34 @@ function handleResetFlag() {
   } catch (error) {
     return false;
   }
+}
+
+function resolveApiBaseUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const fromQuery = (url.searchParams.get('api') || '').trim();
+    if (fromQuery) {
+      const normalized = normalizeApiBase(fromQuery);
+      localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
+      return normalized;
+    }
+    const stored = (localStorage.getItem(API_BASE_STORAGE_KEY) || '').trim();
+    if (stored) return normalizeApiBase(stored);
+    if (typeof window.__FABRIKA_API_BASE_URL__ === 'string' && window.__FABRIKA_API_BASE_URL__.trim()) {
+      return normalizeApiBase(window.__FABRIKA_API_BASE_URL__);
+    }
+    return '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function normalizeApiBase(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function apiUrl(pathname) {
+  return `${API_BASE_URL}${pathname}`;
 }
 
 function renderBookList() {
@@ -1051,7 +1081,7 @@ async function submitProject() {
   showScreen('screen-finish');
 
   try {
-    const response = await fetch('/api/orders', {
+    const response = await fetch(apiUrl('/api/orders'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1129,7 +1159,7 @@ function showScreen(screenId, options = {}) {
 async function retryGeneration() {
   if (!appState.orderId) return;
   try {
-    const response = await fetch(`/api/orders/${encodeURIComponent(appState.orderId)}/retry`, {
+    const response = await fetch(apiUrl(`/api/orders/${encodeURIComponent(appState.orderId)}/retry`), {
       method: 'POST'
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1164,7 +1194,7 @@ function stopOrderPolling() {
 async function pollOrderStatus() {
   if (!appState.orderId) return;
   try {
-    const response = await fetch(`/api/orders/${encodeURIComponent(appState.orderId)}`);
+    const response = await fetch(apiUrl(`/api/orders/${encodeURIComponent(appState.orderId)}`));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const order = await response.json();
     appState.generationStatus = order.generationStatus || appState.generationStatus;
