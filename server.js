@@ -46,15 +46,17 @@ const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
 
 const processingQueue = [];
 let isProcessingQueue = false;
+const allowedCorsOrigins = parseAllowedCorsOrigins(CORS_ALLOW_ORIGIN);
 
 ensurePersistence();
 
 const server = http.createServer(async (req, res) => {
   try {
     const requestPath = (req.url || '/').split('?')[0];
+    const requestOrigin = String(req.headers.origin || '');
+    writeCorsHeaders(res, requestOrigin);
 
     if (req.method === 'OPTIONS' && requestPath.startsWith('/api/')) {
-      writeCorsHeaders(res);
       res.writeHead(204);
       res.end();
       return;
@@ -71,6 +73,7 @@ const server = http.createServer(async (req, res) => {
         },
         telegramConfigured: Boolean(SEND_TO_TELEGRAM && TELEGRAM_BOT_TOKEN && TELEGRAM_MANAGER_CHAT_ID),
         databaseConfigured: true,
+        dataStore: isSupabaseConfigured() ? 'supabase+local-json' : 'local-json',
         photoStorageConfigured: true,
         supabaseConfigured: isSupabaseConfigured(),
         queueLength: processingQueue.length,
@@ -949,15 +952,35 @@ async function notifyManager(order, generationResult) {
 }
 
 function sendJson(res, code, payload) {
-  writeCorsHeaders(res);
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
 }
 
-function writeCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', CORS_ALLOW_ORIGIN);
+function writeCorsHeaders(res, requestOrigin = '') {
+  const allowOrigin = resolveAllowedOrigin(requestOrigin);
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Vary', 'Origin');
+}
+
+function parseAllowedCorsOrigins(value) {
+  const source = String(value || '').trim();
+  if (!source || source === '*') return ['*'];
+  return source
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function resolveAllowedOrigin(requestOrigin) {
+  if (allowedCorsOrigins.includes('*')) return '*';
+  if (!requestOrigin) {
+    return allowedCorsOrigins[0] || '*';
+  }
+  return allowedCorsOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : (allowedCorsOrigins[0] || '*');
 }
 
 function readJson(req) {

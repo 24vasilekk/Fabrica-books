@@ -56,6 +56,14 @@ Current recommended model:
 4. Open `http://localhost:3000`
 5. Manager page: `http://localhost:3000/admin.html`
 
+## Recommended production architecture
+- Frontend on Vercel
+- Backend (`server.js`) on Render/Railway/VPS
+- Supabase Free for DB + Storage
+
+Detailed guide:
+- `DEPLOY_VERCEL_SUPABASE.md`
+
 ## What still depends on your credentials
 - OpenRouter generation requires `OPENROUTER_API_KEY`
 - Telegram delivery requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_MANAGER_CHAT_ID`
