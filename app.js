@@ -7,6 +7,11 @@ let orderPollingTimer = null;
 let questionSetsLoaded = typeof window.BOOK_QUESTION_SETS !== 'undefined';
 let questionSetsLoadingPromise = null;
 let apiBaseUrl = resolveApiBaseUrl();
+let telegramProfile = {
+  name: 'Гость',
+  username: '',
+  photoUrl: ''
+};
 
 const bookTypes = [
   {
@@ -97,12 +102,6 @@ const favoriteBooks = [
     rating: 4.6,
     coverText: 'НВ'
   }
-];
-
-const profileItems = [
-  { title: 'Заказы', value: '3 активных' },
-  { title: 'Черновики', value: '1 сохранен' },
-  { title: 'Контакт', value: '@username' }
 ];
 
 const chapters = [
@@ -271,11 +270,6 @@ const els = {
   bookList: document.getElementById('bookList'),
   favoritesList: document.getElementById('favoritesList'),
   profileList: document.getElementById('profileList'),
-  apiBaseInput: document.getElementById('apiBaseInput'),
-  saveApiBaseButton: document.getElementById('saveApiBaseButton'),
-  checkApiHealthButton: document.getElementById('checkApiHealthButton'),
-  clearApiBaseButton: document.getElementById('clearApiBaseButton'),
-  apiConnectionStatus: document.getElementById('apiConnectionStatus'),
   bookTypeOptions: document.getElementById('bookTypeOptions'),
   customBookType: document.getElementById('customBookType'),
   confirmBookType: document.getElementById('confirmBookType'),
@@ -317,6 +311,7 @@ init();
 
 function init() {
   if (handleResetFlag()) return;
+  initBrandLogo();
   initTelegram();
   if (!appState.selectedBookTypeId && appState.selectedBookType) {
     const matchedType = bookTypes.find((type) => type.title === appState.selectedBookType);
@@ -426,21 +421,72 @@ function renderFavoritesList() {
 
 function renderProfileList() {
   if (!els.profileList) return;
-  els.profileList.innerHTML = '';
+  const answeredCount = questions.filter((question) => isAnswerFilled(appState.answers[question.id])).length;
+  const hasOrder = Boolean(appState.orderId);
+  const hasDraft = answeredCount > 0 || appState.photos.length > 0;
+  const statusMap = {
+    submitting: 'В работе',
+    'done-live': 'Готов',
+    'done-mock': 'Черновик готов',
+    error: 'Ошибка'
+  };
+  const orderStatus = statusMap[appState.automationStatus] || 'Новый';
 
-  profileItems.forEach((itemData) => {
-    const item = document.createElement('article');
-    item.className = 'book-list-item profile-item';
-    item.innerHTML = `
-      <span class="book-cover" aria-hidden="true">•</span>
+  const safeOrderId = escapeHtmlInline(appState.orderId);
+  const safeName = escapeHtmlInline(telegramProfile.name);
+  const safeUsername = escapeHtmlInline(telegramProfile.username);
+  const safePhotoUrl = escapeHtmlInline(telegramProfile.photoUrl);
+
+  els.profileList.innerHTML = `
+    <button class="book-list-item profile-item profile-action" type="button" data-profile-action="orders">
+      <span class="book-cover" aria-hidden="true">●</span>
       <span class="book-copy">
-        <strong>${itemData.title}</strong>
-        <small>${itemData.value}</small>
+        <strong>Заказы</strong>
+        <small>${hasOrder ? `${orderStatus} · ${safeOrderId}` : 'Заказов в работе пока нет'}</small>
       </span>
       <span class="book-rating">›</span>
-    `;
-    els.profileList.appendChild(item);
-  });
+    </button>
+    <button class="book-list-item profile-item profile-action" type="button" data-profile-action="draft">
+      <span class="book-cover" aria-hidden="true">●</span>
+      <span class="book-copy">
+        <strong>Черновик</strong>
+        <small>${hasDraft ? `Ответов: ${answeredCount}, фото: ${appState.photos.length}` : 'Черновик пока пустой'}</small>
+      </span>
+      <span class="book-rating">›</span>
+    </button>
+    <article class="book-list-item profile-item">
+      <span class="book-cover profile-avatar" aria-hidden="true">
+        ${telegramProfile.photoUrl ? `<img src="${safePhotoUrl}" alt="" loading="lazy" />` : getInitials(telegramProfile.name)}
+      </span>
+      <span class="book-copy">
+        <strong>${safeName}</strong>
+        <small>${telegramProfile.username ? `@${safeUsername}` : 'Telegram-профиль'}</small>
+      </span>
+      <span class="book-rating">•</span>
+    </article>
+  `;
+
+  const ordersButton = els.profileList.querySelector('[data-profile-action="orders"]');
+  if (ordersButton) {
+    ordersButton.addEventListener('click', () => {
+      if (appState.orderId) {
+        showScreen('screen-finish');
+        return;
+      }
+      showScreen('screen-book-type');
+    });
+  }
+
+  const draftButton = els.profileList.querySelector('[data-profile-action="draft"]');
+  if (draftButton) {
+    draftButton.addEventListener('click', () => {
+      if (hasDraft) {
+        showScreen('screen-review');
+        return;
+      }
+      showScreen('screen-questionnaire');
+    });
+  }
 }
 
 function setActiveAppSection(sectionId) {
@@ -479,11 +525,27 @@ function initTouchFeedback() {
   document.addEventListener('scroll', clearActive, true);
 }
 
+function initBrandLogo() {
+  const logoMark = document.querySelector('.logo-mark');
+  const logoImage = document.querySelector('.logo-image');
+  if (!logoMark || !logoImage) return;
+
+  const src = String(logoImage.getAttribute('src') || '').trim();
+  if (!src) return;
+
+  const probe = new Image();
+  probe.onload = () => logoMark.classList.add('has-logo');
+  probe.onerror = () => logoMark.classList.remove('has-logo');
+  probe.src = src;
+}
+
 function initTelegram() {
   const webApp = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
   if (!webApp) {
+    telegramProfile = buildFallbackTelegramProfile();
     applyTelegramTheme({});
+    renderProfileList();
     const darkModeMedia = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemThemeChange = () => applyTelegramTheme({});
     if (typeof darkModeMedia.addEventListener === 'function') {
@@ -496,8 +558,50 @@ function initTelegram() {
 
   webApp.ready();
   webApp.expand();
+  telegramProfile = resolveTelegramProfile(webApp);
   applyTelegramTheme(webApp.themeParams || {});
   webApp.onEvent('themeChanged', () => applyTelegramTheme(webApp.themeParams || {}));
+  renderProfileList();
+}
+
+function resolveTelegramProfile(webApp) {
+  const user = webApp?.initDataUnsafe?.user || {};
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+  return {
+    name: fullName || buildFallbackTelegramProfile().name,
+    username: String(user.username || '').trim(),
+    photoUrl: String(user.photo_url || '').trim()
+  };
+}
+
+function buildFallbackTelegramProfile() {
+  const fallbackName = appState.customerName.trim() || 'Профиль Telegram';
+  const contact = appState.customerContact.trim().replace(/^@/, '');
+  const username = contact && !contact.startsWith('+') ? contact : '';
+  return {
+    name: fallbackName,
+    username,
+    photoUrl: ''
+  };
+}
+
+function getInitials(value) {
+  const parts = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!parts.length) return '•';
+  return parts.map((part) => part[0]).join('').toUpperCase();
+}
+
+function escapeHtmlInline(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function applyTelegramTheme(theme = {}) {
@@ -643,24 +747,6 @@ function bindStaticEvents() {
       setActiveAppSection(button.dataset.appSection);
     });
   });
-
-  if (els.saveApiBaseButton) {
-    els.saveApiBaseButton.addEventListener('click', applyApiBaseFromInput);
-  }
-  if (els.checkApiHealthButton) {
-    els.checkApiHealthButton.addEventListener('click', checkApiHealth);
-  }
-  if (els.clearApiBaseButton) {
-    els.clearApiBaseButton.addEventListener('click', clearApiBase);
-  }
-  if (els.apiBaseInput) {
-    els.apiBaseInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        applyApiBaseFromInput();
-      }
-    });
-  }
 }
 
 function restoreInputs() {
@@ -669,57 +755,6 @@ function restoreInputs() {
   els.customerContactInput.value = appState.customerContact || '';
   els.managerCodeInput.value = appState.managerCode || '';
   els.photoComment.value = appState.photoComment || '';
-  if (els.apiBaseInput) {
-    els.apiBaseInput.value = apiBaseUrl;
-  }
-  updateApiConnectionStatus();
-}
-
-function updateApiConnectionStatus(message) {
-  if (!els.apiConnectionStatus) return;
-  if (message) {
-    els.apiConnectionStatus.textContent = message;
-    return;
-  }
-  els.apiConnectionStatus.textContent = `API: ${apiBaseUrl || 'same-origin (/api...)'}`;
-}
-
-function applyApiBaseFromInput() {
-  if (!els.apiBaseInput) return;
-  apiBaseUrl = normalizeApiBase(els.apiBaseInput.value);
-  try {
-    if (apiBaseUrl) {
-      localStorage.setItem(API_BASE_STORAGE_KEY, apiBaseUrl);
-    } else {
-      localStorage.removeItem(API_BASE_STORAGE_KEY);
-    }
-  } catch (error) {}
-  updateApiConnectionStatus(`API сохранен: ${apiBaseUrl || 'same-origin (/api...)'}`);
-}
-
-function clearApiBase() {
-  apiBaseUrl = '';
-  try {
-    localStorage.removeItem(API_BASE_STORAGE_KEY);
-  } catch (error) {}
-  if (els.apiBaseInput) {
-    els.apiBaseInput.value = '';
-  }
-  updateApiConnectionStatus('API сброшен: same-origin (/api...)');
-}
-
-async function checkApiHealth() {
-  updateApiConnectionStatus('Проверяем соединение...');
-  try {
-    const response = await fetch(apiUrl('/api/health'));
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP ${response.status}`);
-    }
-    updateApiConnectionStatus(`Соединение есть. Режим: ${data.mode || 'unknown'}`);
-  } catch (error) {
-    updateApiConnectionStatus(`Нет связи с API: ${error.message || 'unknown error'}`);
-  }
 }
 
 function renderBookTypes() {
@@ -1410,6 +1445,7 @@ function loadState() {
 
 function persistState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+  renderProfileList();
 }
 
 function ensureQuestionSetsLoaded() {
