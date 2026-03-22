@@ -82,9 +82,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && requestPath === '/api/orders') {
-      const db = readDb();
+      const localOrders = readDb().orders;
+      const remoteOrders = await loadOrdersFromSupabase();
+      const mergedOrders = mergeOrders(localOrders, remoteOrders);
       return sendJson(res, 200, {
-        orders: db.orders.slice().sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+        orders: mergedOrders
+          .slice()
+          .sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0))
       });
     }
 
@@ -96,7 +100,10 @@ const server = http.createServer(async (req, res) => {
           .replace('/retry', '')
           .replace('/regenerate-chapter', '')
       );
-      const order = readDb().orders.find((item) => item.orderId === orderId);
+      let order = readDb().orders.find((item) => item.orderId === orderId);
+      if (!order) {
+        order = await loadOrderFromSupabase(orderId);
+      }
       if (!order) return sendJson(res, 404, { error: 'Order not found' });
 
       if (req.method === 'GET' && !cleanPath.endsWith('/retry')) {
@@ -430,7 +437,7 @@ async function syncOrderToSupabase(order) {
     photos: order.photos || []
   };
 
-  await fetch(`${SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`, {
+  const upsertOrderResponse = await fetch(`${SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
@@ -439,9 +446,15 @@ async function syncOrderToSupabase(order) {
       Prefer: 'resolution=merge-duplicates,return=minimal'
     },
     body: JSON.stringify(payload)
-  }).catch(() => {});
+  }).catch(() => null);
 
-  await fetch(`${SUPABASE_URL}/rest/v1/order_status_history`, {
+  if (!upsertOrderResponse || !upsertOrderResponse.ok) {
+    const details = upsertOrderResponse ? await upsertOrderResponse.text().catch(() => '') : 'network-error';
+    console.error('Supabase upsert orders failed:', details);
+    return;
+  }
+
+  const statusHistoryResponse = await fetch(`${SUPABASE_URL}/rest/v1/order_status_history`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
@@ -454,7 +467,160 @@ async function syncOrderToSupabase(order) {
       note: order.generationStatus || order.managerDeliveryStatus || 'Order synced',
       created_at: new Date().toISOString()
     })
-  }).catch(() => {});
+  }).catch(() => null);
+
+  if (!statusHistoryResponse || !statusHistoryResponse.ok) {
+    const details = statusHistoryResponse ? await statusHistoryResponse.text().catch(() => '') : 'network-error';
+    console.error('Supabase insert status history failed:', details);
+  }
+}
+
+async function loadOrdersFromSupabase() {
+  if (!isSupabaseConfigured()) return [];
+
+  const params = new URLSearchParams({
+    select:
+      'order_id,submitted_at,customer_name,customer_contact,book_type_id,book_type_title,payment_method,payment_approved,manager_code,status,generation_status,manager_delivery_status,generated_book,questionnaire,photo_comment,photos',
+    order: 'submitted_at.desc',
+    limit: '200'
+  });
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY
+    }
+  }).catch(() => null);
+
+  if (!response || !response.ok) return [];
+  const rows = await response.json().catch(() => []);
+  if (!Array.isArray(rows)) return [];
+  return rows.map(mapSupabaseOrder).filter(Boolean);
+}
+
+async function loadOrderFromSupabase(orderId) {
+  if (!isSupabaseConfigured()) return null;
+
+  const params = new URLSearchParams({
+    select:
+      'order_id,submitted_at,customer_name,customer_contact,book_type_id,book_type_title,payment_method,payment_approved,manager_code,status,generation_status,manager_delivery_status,generated_book,questionnaire,photo_comment,photos',
+    order_id: `eq.${orderId}`,
+    limit: '1'
+  });
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY
+    }
+  }).catch(() => null);
+
+  if (!response || !response.ok) return null;
+  const rows = await response.json().catch(() => []);
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) return null;
+
+  const order = mapSupabaseOrder(row);
+  const statuses = await loadOrderStatusesFromSupabase(orderId);
+  if (statuses.length) {
+    order.statuses = statuses;
+  }
+  return order;
+}
+
+async function loadOrderStatusesFromSupabase(orderId) {
+  if (!isSupabaseConfigured()) return [];
+
+  const params = new URLSearchParams({
+    select: 'status,note,created_at',
+    order_id: `eq.${orderId}`,
+    order: 'created_at.asc',
+    limit: '300'
+  });
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/order_status_history?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY
+    }
+  }).catch(() => null);
+
+  if (!response || !response.ok) return [];
+  const rows = await response.json().catch(() => []);
+  if (!Array.isArray(rows)) return [];
+
+  return rows.map((row) => ({
+    status: row.status || 'updated',
+    at: row.created_at || new Date().toISOString(),
+    note: row.note || ''
+  }));
+}
+
+function mapSupabaseOrder(row) {
+  if (!row || !row.order_id) return null;
+  const questionnaire = parseJsonLike(row.questionnaire, { questions: [] });
+  const photos = parseJsonLike(row.photos, []);
+
+  return {
+    orderId: row.order_id,
+    submittedAt: row.submitted_at || new Date().toISOString(),
+    customer: {
+      name: row.customer_name || '',
+      contact: row.customer_contact || ''
+    },
+    bookType: {
+      id: row.book_type_id || '',
+      title: row.book_type_title || ''
+    },
+    payment: {
+      approved: Boolean(row.payment_approved),
+      method: row.payment_method || '',
+      managerCode: row.manager_code || ''
+    },
+    status: row.status || 'received',
+    generationStatus: row.generation_status || '',
+    managerDeliveryStatus: row.manager_delivery_status || '',
+    generatedBook: row.generated_book || '',
+    questionnaire: questionnaire && typeof questionnaire === 'object' ? questionnaire : { questions: [] },
+    photoComment: row.photo_comment || '',
+    photos: Array.isArray(photos) ? photos : [],
+    generatedOutline: null,
+    generatedChapters: [],
+    aiDiagnostics: null,
+    mode: 'unknown',
+    statuses: []
+  };
+}
+
+function parseJsonLike(value, fallback) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'object') return value;
+  if (typeof value !== 'string') return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function mergeOrders(localOrders, remoteOrders) {
+  const merged = new Map();
+  (Array.isArray(remoteOrders) ? remoteOrders : []).forEach((order) => {
+    if (!order || !order.orderId) return;
+    merged.set(order.orderId, order);
+  });
+  (Array.isArray(localOrders) ? localOrders : []).forEach((order) => {
+    if (!order || !order.orderId) return;
+    const remote = merged.get(order.orderId) || {};
+    merged.set(order.orderId, {
+      ...remote,
+      ...order
+    });
+  });
+  return Array.from(merged.values());
 }
 
 async function generateBook(order) {
